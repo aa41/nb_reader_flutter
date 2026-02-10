@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    
+    <data>
+        
+        <variable
+            name="viewModel"
+            type="com.newbiechen.nbreader.ui.page.bookshelf.BookShelfViewModel" />
+    </data>
+    
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+        
+        <com.newbiechen.nbreader.ui.component.widget.StatusView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            app:curStatus="@{viewModel.pageStatus}"
+            app:layout_empty="@layout/layout_book_shelf_empty">
+            
+            <com.github.jdsjlzx.recyclerview.LRecyclerView
+                android:id="@+id/rv_book"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                app:items="@{viewModel.cacheBookList}" />
+        </com.newbiechen.nbreader.ui.component.widget.StatusView>
+    </FrameLayout>
+</layout>

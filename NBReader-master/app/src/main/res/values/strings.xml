@@ -1,0 +1,83 @@
+<resources>
+    <string name="app_name">NBReader</string>
+    
+    <string name="common_search">搜索</string>
+    <string name="common_more">更多</string>
+    <string name="common_book_shelf">书架</string>
+    <string name="common_find">发现</string>
+    <string name="common_personal_center">个人中心</string>
+    <string name="common_sure">确定</string>
+    <string name="common_reset">重置</string>
+    <string name="common_filter">筛选</string>
+    <string name="common_retry">重试</string>
+    <string name="common_loading">正在加载 ...</string>
+    <string name="common_catalog">类别</string>
+    <string name="common_category">目录</string>
+    <string name="common_status">状态</string>
+    <string name="common_update_time">更新时间</string>
+    <string name="common_serial">连载</string>
+    <string name="common_complete">完结</string>
+    <string name="common_popularity">人气</string>
+    <string name="common_remain">留存</string>
+    <string name="common_comment_rate">评分</string>
+    <string name="common_word_count">字数</string>
+    <string name="common_book_detail">书籍详情</string>
+    <string name="common_ten_thousand">万</string>
+    <string name="common_word">%1$s字</string>
+    <string name="common_percent">%1$s %%</string>
+    <string name="common_phone_catalog">手机目录</string>
+    <string name="common_smart_import">智能导入</string>
+    <string name="common_add_collection">+ 添加收藏</string>
+    <string name="common_start_read">开始阅读</string>
+    <string name="common_add_bookshelf">加入书架</string>
+    <string name="common_select_all">全选</string>
+    <string name="common_cancel_select_all">取消全选</string>
+    <string name="common_delete">删除</string>
+    <string name="common_brief">简介</string>
+    <string name="common_label">标签</string>
+    <string name="common_scanning">扫描中 ...</string>
+    <string name="common_sort">排序</string>
+    <string name="common_night">夜间</string>
+    <string name="common_morning">日间</string>
+    <string name="common_setting">设置</string>
+    <string name="common_bright">亮度</string>
+    <string name="common_system_bright">系统亮度</string>
+    <string name="common_typeface">字体</string>
+    <string name="common_auto_read">自动翻页</string>
+    <string name="common_horizon_screen_mode">横屏模式</string>
+    <string name="common_vertical_screen_mode">竖屏模式</string>
+    <string name="common_more_setting">更多设置</string>
+    
+    <string name="common_prev_chapter">上一章</string>
+    <string name="common_next_chapter">下一章</string>
+    
+    <string name="book_brief">%1$s | %2$s</string>
+    <string name="book_hot">热度：%1$s</string>
+    <string name="ten_thousand">%1$.2f 万</string>
+    <string name="during_day">%1$d 天内</string>
+    <string name="tip_page_empty">暂无数据</string>
+    <string name="tip_network_error">无法连接到网络，请重试</string>
+    
+    <string name="book_detail_category_brief">连载至%1$d章 • %2$s</string>
+    
+    <string name="text_fold_tip">...  <![CDATA[<font color=#0089EF>展开</font>]]></string>
+    
+    <string name="file_system_selected">已选  <![CDATA[<font color=#FE960E>%1$d</font>]]>  项
+    </string>
+    
+    <!--Book Shelf-->
+    
+    <string name="import_book_from_local">添加本地书籍</string>
+    
+    <!--read activity-->
+    <string name="read_chapter_title">章节 %1$s</string>
+    <string name="read_page_tip">%1$d/%2$d</string>
+    
+    <string name="none_page_anim">无</string>
+    <string name="simulation_page_anim">仿真</string>
+    <string name="scroll_page_anim">滚动</string>
+    <string name="cover_page_anim">覆盖</string>
+    <string name="slide_page_anim">滑动</string>
+    <string name="read_setting_menu_tradition_chinese">繁</string>
+
+</resources>

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#FFFE960E</color>
+    <color name="colorPrimaryDark">#00574B</color>
+    <color name="colorAccent">#D81B60</color>
+    <color name="colorBlack">#FF000000</color>
+    <color name="colorWhite">#FFFFFFFF</color>
+    <color name="colorTransparent">@android:color/transparent</color>
+    
+    <color name="text_orange">@color/colorPrimary</color>
+    <color name="text_emphasized">@color/colorPrimary</color>
+    <color name="text_emphasized_light">#fff5a623</color>
+    <color name="text_disable">#59222222</color>
+    
+    <color name="light_translucent">#23000000</color>
+    <color name="light_pink">#fb9090</color>
+    <color name="light_white">#EEEEEE</color>
+    <color name="light_coffee">#A58D5E</color>
+    <color name="light_red">#EC4A48</color>
+    <color name="light_blue">#039BE5</color>
+    <!--find-->
+    <color name="common_background">#FCFCFC</color>
+    
+    <!--book_list-->
+    <color name="bg_book_list_filter_sure">@color/colorPrimary</color>
+    
+    <!--tag-->
+    <color name="bg_tag_normal">#EEEEEE</color>
+    <color name="bg_book_list_filter">#F8F8F8</color>
+    <color name="text_book_list_filter_title">#A7A7A7</color>
+    <color name="stroke_tag_selected">@color/colorPrimary</color>
+    
+    <color name="bg_divider">#F1F1F1</color>
+    <color name="text_book_list_sort">#7A7A7A</color>
+    
+    <color name="type_txt">#ff60a6f8</color>
+    <color name="type_epub">#ff56bb36</color>
+    <color name="type_pdf">#ffe8554d</color>
+    <color name="type_mobi">#ffa45fdf</color>
+    
+    <color name="bg_accent">@color/text_orange</color>
+    <color name="bg_accent_disable">#59E79F42</color>
+    
+    <!--read-->
+    <color name="bg_read_menu">#e8101010</color>
+    <color name="read_menu_text">#CBCBCB</color>
+    
+    <color name="seek_bar_stroke">#1e000000</color>
+    
+    <color name="read_catalog_divider">#263d3a3a</color>
+    <color name="read_menu_text_unable">#ff4d4d4d</color>
+    
+    <color name="read_background_1">#FFCEC29C</color>
+    <color name="read_background_2">#FFCCEBCC</color>
+    
+    <color name="read_text_color_1">#FF000000</color>
+    
+    <color name="switch_thumb_on">@color/colorPrimary</color>
+    <color name="switch_thumb_off">@color/colorWhite</color>
+    <color name="switch_track_on">#59FE960E</color>
+    <color name="switch_track_off">#B9B9B9</color>
+    <color name="read_bright_menu_divider">#424242</color>
+    
+    <!--button-->
+    <color name="bg_button_normal">@color/colorWhite</color>
+    <color name="bg_button_press">#E3E3E3</color>
+    <color name="bg_standard_btn_normal">@color/colorPrimary</color>
+    <color name="bg_standard_btn_press">#fffeca86</color>
+</resources>

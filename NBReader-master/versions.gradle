@@ -1,0 +1,107 @@
+ext.deps = [:]
+
+// 版本号
+def versions = [:]
+versions.androidx = '1.1.0'
+versions.android = '3.6.1'
+versions.kotlin = '1.3.61'
+versions.constraintlayout = "1.1.3"
+versions.junit = '4.13'
+versions.runner = "1.2.0"
+versions.espresso_core = "3.2.0"
+versions.room = '2.2.3'
+versions.retrofit = '2.7.1'
+versions.okhttp = '4.3.1'
+versions.rxjava2 = "2.4.0"
+versions.rxandroid = "2.1.1"
+versions.stetho = '1.5.1'
+versions.lifecycle = '2.2.0'
+versions.dagger = '2.26'
+versions.material = '1.2.0-alpha04'
+versions.glide = '4.11.0'
+versions.paging = '2.1.1'
+
+// 依赖
+def deps = [:]
+
+// androidx 依赖
+def androidx = [:]
+androidx.plugin = "com.android.tools.build:gradle:$versions.android"
+androidx.appcompat = "androidx.appcompat:appcompat:$versions.androidx"
+androidx.ktx = "androidx.core:core-ktx:$versions.androidx"
+androidx.constraintlayout = "androidx.constraintlayout:constraintlayout:$versions.constraintlayout"
+androidx.material = "com.google.android.material:material:$versions.material"
+deps.androidx = androidx
+
+def paging = [:]
+paging.common = "androidx.paging:paging-common:$versions.paging"
+paging.runtime = "androidx.paging:paging-runtime:$versions.paging"
+paging.rxjava2 = "androidx.paging:paging-rxjava2:$versions.paging"
+deps.paging = paging
+
+// kotlin 依赖
+def kotlin = [:]
+kotlin.stdlib = "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$versions.kotlin"
+kotlin.plugin = "org.jetbrains.kotlin:kotlin-gradle-plugin:$versions.kotlin"
+deps.kotlin = kotlin
+
+
+
+// room 数据库
+def room = [:]
+room.runtime = "androidx.room:room-runtime:$versions.room"
+room.rxjava2 = "androidx.room:room-rxjava2:$versions.room"
+room.compiler = "androidx.room:room-compiler:$versions.room"
+deps.room = room
+
+// 网络请求库
+def okhttp = [:]
+okhttp.runtime = "com.squareup.okhttp3:okhttp:$versions.okhttp"
+okhttp.logging = "com.squareup.okhttp3:logging-interceptor:$versions.okhttp"
+deps.okhttp = okhttp
+
+def retrofit = [:]
+retrofit.runtime = "com.squareup.retrofit2:retrofit:$versions.retrofit"
+retrofit.gson = "com.squareup.retrofit2:converter-gson:$versions.retrofit"
+retrofit.rxjava2 = "com.squareup.retrofit2:adapter-rxjava2:$versions.retrofit"
+deps.retrofit = retrofit
+
+// dagger2 依赖注入
+def dagger = [:]
+dagger.runtime = "com.google.dagger:dagger:$versions.dagger"
+dagger.android = "com.google.dagger:dagger-android:$versions.dagger"
+dagger.android_support = "com.google.dagger:dagger-android-support:$versions.dagger"
+dagger.compiler = "com.google.dagger:dagger-compiler:$versions.dagger"
+dagger.android_processor = "com.google.dagger:dagger-android-processor:$versions.dagger"
+deps.dagger = dagger
+
+// rxjava
+def reactivex = [:]
+reactivex.rxjava2 = "io.reactivex.rxjava2:rxkotlin:$versions.rxjava2"
+reactivex.rxandroid = "io.reactivex.rxjava2:rxandroid:$versions.rxandroid"
+deps.reactivex = reactivex
+
+// debug
+def stetho = [:]
+stetho.runtime = "com.facebook.stetho:stetho:$versions.stetho"
+stetho.okhttp = "com.facebook.stetho:stetho-okhttp3:$versions.stetho"
+deps.stetho = stetho
+
+def lifecycle = [:]
+lifecycle.extensions = "androidx.lifecycle:lifecycle-extensions:$versions.lifecycle"
+lifecycle.compiler = "androidx.lifecycle:lifecycle-compiler:$versions.lifecycle"
+deps.lifecycle = lifecycle
+
+// 图片加载库
+def glide = [:]
+glide.runtime = "com.github.bumptech.glide:glide:$versions.glide"
+glide.compiler = "com.github.bumptech.glide:compiler:$versions.glide"
+
+deps.glide = glide
+
+ext.deps = deps
+
+def build_versions = [:]
+build_versions.min_sdk = 21
+build_versions.target_sdk = 28
+ext.build_versions = build_versions

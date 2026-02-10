@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+        xmlns:app="http://schemas.android.com/apk/res-auto">
+    
+    <data>
+        <variable name="viewModel" type="com.newbiechen.nbreader.ui.page.booklist.BookListViewModel"/>
+    </data>
+    
+    <androidx.drawerlayout.widget.DrawerLayout
+            android:id="@+id/dl_slide"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+        
+        <androidx.constraintlayout.widget.ConstraintLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+            <include
+                    android:id="@+id/toolbar_include"
+                    layout="@layout/layout_toolbar"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toTopOf="@id/cl_book_tag"
+                    app:layout_constraintLeft_toLeftOf="parent"
+                    app:layout_constraintRight_toRightOf="parent"/>
+            
+            <androidx.constraintlayout.widget.ConstraintLayout
+                    android:id="@+id/cl_book_tag"
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:background="@color/colorWhite"
+                    android:paddingLeft="5dp"
+                    android:paddingRight="5dp"
+                    app:layout_constraintTop_toBottomOf="@id/toolbar_include"
+                    app:layout_constraintBottom_toTopOf="@id/sv_status"
+                    app:layout_constraintLeft_toLeftOf="parent"
+                    app:layout_constraintRight_toRightOf="parent">
+                
+                <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/rv_book_sort"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        app:layout_constraintTop_toTopOf="parent"
+                        app:layout_constraintBottom_toBottomOf="parent"
+                        app:layout_constraintLeft_toLeftOf="parent"
+                        app:layout_constraintRight_toLeftOf="@id/tv_filter">
+                </androidx.recyclerview.widget.RecyclerView>
+                
+                <TextView
+                        android:id="@+id/tv_filter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="0dp"
+                        android:layout_marginStart="5dp"
+                        android:gravity="center"
+                        android:text="@string/common_filter"
+                        android:textSize="@dimen/text_size_small"
+                        android:textColor="@color/text_book_list_sort"
+                        android:drawableEnd="@drawable/ic_filter"
+                        app:layout_constraintTop_toTopOf="parent"
+                        app:layout_constraintBottom_toBottomOf="parent"
+                        app:layout_constraintLeft_toRightOf="@id/rv_book_sort"
+                        app:layout_constraintRight_toRightOf="parent"/>
+            </androidx.constraintlayout.widget.ConstraintLayout>
+            
+            <com.newbiechen.nbreader.ui.component.widget.StatusView
+                    android:id="@+id/sv_status"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    app:curStatus="@{viewModel.pageStatus}"
+                    app:layout_constraintTop_toBottomOf="@+id/cl_book_tag"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintLeft_toLeftOf="parent"
+                    app:layout_constraintRight_toRightOf="parent">
+                
+                <com.github.jdsjlzx.recyclerview.LRecyclerView
+                        android:id="@+id/rv_book"
+                        android:paddingLeft="12dp"
+                        android:paddingRight="12dp"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        app:items="@{viewModel.bookList}"/>
+            </com.newbiechen.nbreader.ui.component.widget.StatusView>
+        
+        </androidx.constraintlayout.widget.ConstraintLayout>
+        
+        <!--右侧滑动栏-->
+        <androidx.constraintlayout.widget.ConstraintLayout
+                android:layout_width="310dp"
+                android:layout_height="match_parent"
+                android:background="@color/bg_book_list_filter"
+                android:layout_gravity="end">
+            
+            <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rv_filter"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:paddingLeft="15dp"
+                    android:paddingRight="15dp"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toTopOf="@+id/tv_reset"
+                    app:layout_constraintLeft_toLeftOf="parent"
+                    app:layout_constraintRight_toRightOf="parent"/>
+            
+            <TextView
+                    android:id="@+id/tv_reset"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/height_book_list_filter_btn"
+                    android:gravity="center"
+                    android:textSize="@dimen/text_size_normal"
+                    android:background="@color/colorWhite"
+                    android:text="@string/common_reset"
+                    android:textColor="@color/colorBlack"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintLeft_toLeftOf="parent"
+                    app:layout_constraintRight_toLeftOf="@+id/tv_sure"/>
+            
+            <TextView
+                    android:id="@+id/tv_sure"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/height_book_list_filter_btn"
+                    android:background="@color/bg_book_list_filter_sure"
+                    android:text="@string/common_sure"
+                    android:gravity="center"
+                    android:textSize="@dimen/text_size_normal"
+                    android:textColor="@color/colorWhite"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintLeft_toRightOf="@+id/tv_reset"
+                    app:layout_constraintRight_toRightOf="parent"/>
+        </androidx.constraintlayout.widget.ConstraintLayout>
+    </androidx.drawerlayout.widget.DrawerLayout>
+</layout>

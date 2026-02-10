@@ -1,0 +1,130 @@
+apply plugin: 'com.android.application'
+
+apply plugin: 'kotlin-android'
+
+apply plugin: 'kotlin-android-extensions'
+
+apply plugin: 'kotlin-kapt'
+
+android {
+    compileSdkVersion build_versions.target_sdk
+
+    defaultConfig {
+        applicationId "com.newbiechen.nbreader"
+        minSdkVersion build_versions.min_sdk
+        targetSdkVersion build_versions.target_sdk
+        versionCode 1
+        versionName "1.0"
+
+        javaCompileOptions {
+            annotationProcessorOptions {
+                //room的数据库概要、记录
+                arguments = ["room.schemaLocation":
+                                     "$projectDir/schemas".toString()]
+            }
+        }
+
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++11"
+            }
+            ndk {
+                abiFilters "armeabi-v7a"
+            }
+        }
+
+        sourceSets {
+            main {
+                jniLibs.srcDirs = ['src/main/cpp/libs']
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+        }
+    }
+
+    // 支持 DataBinding
+    dataBinding {
+        enabled = true
+    }
+
+    android {
+        compileOptions{
+            sourceCompatibility JavaVersion.VERSION_1_8
+            targetCompatibility JavaVersion.VERSION_1_8
+        }
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+
+    // androidx
+    implementation deps.kotlin.stdlib
+    implementation deps.androidx.appcompat
+    implementation deps.androidx.ktx
+    implementation deps.androidx.constraintlayout
+    implementation deps.androidx.material
+
+    // room 数据库
+    implementation deps.room.runtime
+    implementation deps.room.rxjava2
+    kapt deps.room.compiler
+
+    // Dagger2
+    implementation deps.dagger.runtime
+    implementation deps.dagger.android
+    implementation deps.dagger.android_support
+    kapt deps.dagger.compiler
+    kapt deps.dagger.android_processor
+
+    // RxJava and RxAndroid
+    implementation deps.reactivex.rxjava2
+    implementation deps.reactivex.rxandroid
+
+    // Stetho for network debugging
+    implementation deps.stetho.runtime
+    implementation deps.stetho.okhttp
+
+    // ViewModel
+    implementation deps.lifecycle.extensions
+    kapt deps.lifecycle.compiler
+
+    // OkHttp and Retrofit
+    implementation deps.okhttp.runtime
+    implementation deps.okhttp.logging
+    implementation deps.retrofit.runtime
+    implementation deps.retrofit.rxjava2
+    implementation deps.retrofit.gson
+
+    // paging
+    implementation deps.paging.runtime
+    implementation deps.paging.rxjava2
+
+    implementation deps.glide.runtime
+    annotationProcessor deps.glide.compiler
+
+    implementation 'jp.wasabeef:glide-transformations:4.1.0'
+    // circle_image_view
+    implementation 'de.hdodenhof:circleimageview:3.1.0'
+    // flowlayout
+    implementation 'com.hyman:flowlayout-lib:1.1.2'
+    // 滑动刷新
+    implementation 'com.github.jdsjlzx:LRecyclerView:1.5.4.3'
+    // 权限检测库
+    implementation 'com.yanzhenjie.permission:x:2.0.1'
+    // 汉字转拼音
+    implementation 'com.github.promeg:tinypinyin:2.0.3'
+    // zip 处理库
+    implementation 'net.lingala.zip4j:zip4j:2.3.2'
+
+}

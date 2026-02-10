@@ -9,6 +9,7 @@ import '../../core/book_type.dart';
 import '../../data/book_repository.dart';
 import '../../parser/epub/epub_plugin.dart';
 import '../../parser/format_plugin.dart';
+import '../../parser/markdown/markdown_plugin.dart';
 import '../../parser/txt/txt_plugin.dart';
 import '../../text/config/text_config.dart';
 import '../../text/engine/text_model.dart';
@@ -48,10 +49,7 @@ class _ReadPageState extends State<ReadPage> {
   bool _isNightMode = false;
 
   // 页面信息
-  String _chapterTitle = '';
   int _currentChapterIndex = 0;
-  int _pageIndex = 0;
-  int _pageCount = 0;
 
   // 配置
   int _fontSize = 18;
@@ -109,6 +107,9 @@ class _ReadPageState extends State<ReadPage> {
           break;
         case BookType.epub:
           _plugin = EpubPlugin();
+          break;
+        case BookType.markdown:
+          _plugin = MarkdownPlugin();
           break;
       }
 
@@ -178,11 +179,6 @@ class _ReadPageState extends State<ReadPage> {
     final prevChapter = _currentChapterIndex;
     setState(() {
       _currentChapterIndex = pos.chapterIndex;
-      _pageIndex = progress.pageIndex;
-      _pageCount = progress.pageCount;
-      if (pos.chapterIndex < _chapters.length) {
-        _chapterTitle = _chapters[pos.chapterIndex].title;
-      }
     });
     // 切换章节时自动保存进度
     if (pos.chapterIndex != prevChapter) {
@@ -342,7 +338,6 @@ class _ReadPageState extends State<ReadPage> {
     }
 
     final bgColor = Color(_textConfig.bgColor);
-    final textColor = Color(_textConfig.textColor);
 
     return Scaffold(
       key: _scaffoldKey,
@@ -357,75 +352,17 @@ class _ReadPageState extends State<ReadPage> {
       drawerEnableOpenDragGesture: false,
       body: Stack(
         children: [
-          // 阅读器主体
-          Column(
-            children: [
-              // Header
-              Container(
-                color: bgColor,
-                padding: EdgeInsets.only(
-                  top: MediaQuery.of(context).padding.top + 4,
-                  left: 16,
-                  right: 16,
-                  bottom: 4,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _chapterTitle,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: textColor.withValues(alpha: 0.5),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // Reader
-              Expanded(
-                child: TextReaderWidget(
-                  key: _readerKey,
-                  textModel: _model!,
-                  textConfig: _textConfig,
-                  animType: _animType,
-                  onPageChanged: _onPageChanged,
-                  onMenuTap: _toggleMenu,
-                ),
-              ),
-              // Footer
-              Container(
-                color: bgColor,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 4,
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      _pageCount > 0
-                          ? '${_pageIndex + 1}/$_pageCount'
-                          : '',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: textColor.withValues(alpha: 0.4),
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      _timeStr,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: textColor.withValues(alpha: 0.4),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          // 阅读器主体（全屏，header/footer 由 Canvas 绘制）
+          TextReaderWidget(
+            key: _readerKey,
+            textModel: _model!,
+            textConfig: _textConfig,
+            animType: _animType,
+            onPageChanged: _onPageChanged,
+            onMenuTap: _toggleMenu,
+            chapters: _chapters,
+            timeStr: _timeStr,
+            safeArea: MediaQuery.of(context).padding,
           ),
 
           // 菜单遮罩 + 菜单

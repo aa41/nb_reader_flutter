@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 import '../text/config/text_config.dart';
@@ -5,6 +7,7 @@ import '../text/engine/text_canvas.dart';
 import '../text/engine/text_engine.dart';
 import '../text/engine/text_model.dart';
 import '../text/engine/text_page_controller.dart';
+import '../text/entity/text_chapter.dart';
 import '../text/entity/text_position.dart';
 import 'anim/anim_page_painter.dart';
 import 'anim/cover_page_animation.dart';
@@ -24,12 +27,22 @@ typedef OnMenuTap = void Function();
 
 /// 文本阅读器 Widget
 /// 集成 TextEngine + PageAnimation + GestureDetector
+/// Header/Footer 绘制在 Canvas 中，翻页动画覆盖全屏
 class TextReaderWidget extends StatefulWidget {
   final TextModel textModel;
   final TextConfig? textConfig;
   final PageAnimType animType;
   final OnPageChanged? onPageChanged;
   final OnMenuTap? onMenuTap;
+
+  /// 章节列表（用于绘制 header 章节标题）
+  final List<TextChapter> chapters;
+
+  /// 当前时间字符串（用于绘制 footer 时间）
+  final String timeStr;
+
+  /// 安全区域内边距（状态栏/导航栏高度）
+  final EdgeInsets safeArea;
 
   const TextReaderWidget({
     super.key,
@@ -38,6 +51,9 @@ class TextReaderWidget extends StatefulWidget {
     this.animType = PageAnimType.slide,
     this.onPageChanged,
     this.onMenuTap,
+    this.chapters = const [],
+    this.timeStr = '',
+    this.safeArea = EdgeInsets.zero,
   });
 
   @override
@@ -52,10 +68,14 @@ class TextReaderWidgetState extends State<TextReaderWidget>
   int _version = 0;
   bool _isInitialized = false;
 
+  /// Header/Footer 高度
+  static const double _hfHeight = 20.0;
+  static const double _hfFontSize = 11.0;
+
   @override
   void initState() {
     super.initState();
-    _engine = TextEngine(widget.textConfig ?? TextConfig());
+    _engine = TextEngine(_buildEffectiveConfig());
     _createAnimation(widget.animType);
     // 当图片异步解码完成后，重新分页并重绘（图片实际尺寸可能与占位符不同）
     TextCanvas.onImageDecoded = () {
@@ -74,11 +94,28 @@ class TextReaderWidgetState extends State<TextReaderWidget>
     super.dispose();
   }
 
+  /// 构建包含安全区域 + header/footer 的有效配置
+  TextConfig _buildEffectiveConfig() {
+    final base = widget.textConfig ?? TextConfig();
+    final sa = widget.safeArea;
+    return TextConfig(
+      textColor: base.textColor,
+      bgColor: base.bgColor,
+      wallpaperPath: base.wallpaperPath,
+      marginLeft: base.marginLeft,
+      marginRight: base.marginRight,
+      marginTop: base.marginTop + sa.top.toInt() + _hfHeight.toInt() + 4,
+      marginBottom: base.marginBottom + sa.bottom.toInt() + _hfHeight.toInt() + 4,
+      baseTextStyle: base.getBaseTextStyle(),
+    );
+  }
+
   @override
   void didUpdateWidget(covariant TextReaderWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.textConfig != widget.textConfig && widget.textConfig != null) {
-      _engine.setTextConfig(widget.textConfig!);
+    if (oldWidget.textConfig != widget.textConfig ||
+        oldWidget.safeArea != widget.safeArea) {
+      _engine.setTextConfig(_buildEffectiveConfig());
       _pageAnim?.invalidateCache();
       _invalidate();
     }
@@ -166,6 +203,76 @@ class TextReaderWidgetState extends State<TextReaderWidget>
   @override
   void drawPage(Canvas canvas, PageType type) {
     _engine.draw(canvas, type);
+    _drawHeaderFooter(canvas, type);
+  }
+
+  /// 在 Canvas 上绘制 Header（章节标题）和 Footer（页码 + 时间）
+  void _drawHeaderFooter(Canvas canvas, PageType type) {
+    final config = _engine.getTextConfig();
+    final sa = widget.safeArea;
+    final textColor = Color(config.getTextColor()).withValues(alpha: 0.4);
+    final marginLeft = config.getMarginLeft().toDouble();
+    final viewW = _engine.viewWidth.toDouble();
+    final viewH = _engine.viewHeight.toDouble();
+    final marginRight = config.getMarginRight().toDouble();
+
+    // 获取当前页的位置和进度
+    final controller = _engine.pageController;
+    if (controller == null) return;
+    final pos = controller.getPagePosition(type);
+    final progress = controller.getPageProgress(type);
+
+    // === Header: 章节标题 ===
+    if (pos != null && widget.chapters.isNotEmpty) {
+      final chapterIdx = pos.chapterIndex.clamp(0, widget.chapters.length - 1);
+      final title = widget.chapters[chapterIdx].title;
+      final headerY = sa.top + 4;
+      _drawText(
+        canvas, title, marginLeft, headerY,
+        viewW - marginLeft - marginRight,
+        _hfFontSize, textColor,
+        maxLines: 1,
+      );
+    }
+
+    // === Footer: 页码 + 时间 ===
+    final footerY = viewH - sa.bottom - _hfHeight;
+    if (progress != null && progress.pageCount > 0) {
+      final pageStr = '${progress.pageIndex + 1}/${progress.pageCount}';
+      _drawText(
+        canvas, pageStr, marginLeft, footerY,
+        viewW / 2 - marginLeft,
+        _hfFontSize, textColor,
+      );
+    }
+    if (widget.timeStr.isNotEmpty) {
+      _drawText(
+        canvas, widget.timeStr, viewW / 2, footerY,
+        viewW / 2 - marginRight,
+        _hfFontSize, textColor,
+        align: TextAlign.right,
+      );
+    }
+  }
+
+  void _drawText(
+    Canvas canvas, String text, double x, double y, double maxWidth,
+    double fontSize, Color color, {
+    int maxLines = 1,
+    TextAlign align = TextAlign.left,
+  }) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(fontSize: fontSize, color: color),
+      ),
+      textDirection: ui.TextDirection.ltr,
+      maxLines: maxLines,
+      ellipsis: '…',
+    )..layout(maxWidth: maxWidth);
+    final dx = align == TextAlign.right ? x + maxWidth - painter.width : x;
+    painter.paint(canvas, Offset(dx, y));
+    painter.dispose();
   }
 
   @override
@@ -264,7 +371,7 @@ class TextReaderWidgetState extends State<TextReaderWidget>
 
   /// 更新 TextConfig（字号等配置变更）
   void updateTextConfig(TextConfig config) {
-    _engine.setTextConfig(config);
+    _engine.setTextConfig(_buildEffectiveConfig());
     _pageAnim?.invalidateCache();
     _invalidate();
   }

@@ -21,6 +21,8 @@ class TreeTextStyle {
   final bool _allowHyphenations;
   final String? _fontFamily;
   final double _letterSpacing;
+  final int? _color;
+  final int? _bgColor;
 
   TreeTextStyle({
     this.parent,
@@ -40,6 +42,8 @@ class TreeTextStyle {
     bool allowHyphenations = true,
     String? fontFamily,
     double letterSpacing = 0.5,
+    int? color,
+    int? bgColor,
   })  : _fontSize = fontSize,
         _leftIndent = leftIndent,
         _rightIndent = rightIndent,
@@ -55,7 +59,9 @@ class TreeTextStyle {
         _strikeThrough = strikeThrough,
         _allowHyphenations = allowHyphenations,
         _fontFamily = fontFamily,
-        _letterSpacing = letterSpacing;
+        _letterSpacing = letterSpacing,
+        _color = color,
+        _bgColor = bgColor;
 
   int getFontSize([TextMetrics? metrics]) => _fontSize;
   int getLeftIndent(TextMetrics metrics) => _leftIndent;
@@ -73,6 +79,8 @@ class TreeTextStyle {
   bool allowHyphenations() => _allowHyphenations;
   String? getFontFamily() => _fontFamily;
   double getLetterSpacing() => _letterSpacing;
+  int? getColor() => _color ?? parent?.getColor();
+  int? getBgColor() => _bgColor ?? parent?.getBgColor();
 
   /// 创建子样式
   TreeTextStyle createChild({
@@ -92,6 +100,8 @@ class TreeTextStyle {
     bool? allowHyphenations,
     String? fontFamily,
     double? letterSpacing,
+    int? color,
+    int? bgColor,
   }) {
     return TreeTextStyle(
       parent: this,
@@ -111,6 +121,8 @@ class TreeTextStyle {
       allowHyphenations: allowHyphenations ?? _allowHyphenations,
       fontFamily: fontFamily ?? _fontFamily,
       letterSpacing: letterSpacing ?? _letterSpacing,
+      color: color ?? _color,
+      bgColor: bgColor ?? _bgColor,
     );
   }
 

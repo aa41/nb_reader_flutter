@@ -249,6 +249,8 @@ class TextEngine extends BaseTextEngine {
     var lastSpaceWidth = 0;
     var internalSpaceCount = 0;
     var removeLastSpace = false;
+    // 记录样式关闭前的最大 spaceAfter（用于段落结束时的间距计算）
+    var maxSpaceAfterBeforeClose = 0;
 
     while (curElementIndex < endElementIndex) {
       final element = paragraphCursor.getElement(curElementIndex)!;
@@ -272,6 +274,14 @@ class TextEngine extends BaseTextEngine {
         wordOccurred = true;
         isVisible = true;
       } else if (isStyleElement(element)) {
+        // 在应用样式关闭标签之前，保存当前样式的 spaceAfter
+        // 避免样式弹出后丢失段后间距信息
+        if (element is TextControlElement && !element.isStart) {
+          final curSpaceAfter = getTextStyle().getSpaceAfter(getMetrics());
+          if (curSpaceAfter > maxSpaceAfterBeforeClose) {
+            maxSpaceAfterBeforeClose = curSpaceAfter;
+          }
+        }
         applyStyleElement(element);
       }
 
@@ -330,9 +340,12 @@ class TextEngine extends BaseTextEngine {
       }
     }
 
-    // 段后间距
+    // 段后间距（取当前样式与关闭前样式的最大值）
     if (curLineInfo.isEndOfParagraph()) {
-      curLineInfo.vSpaceAfter = getTextStyle().getSpaceAfter(getMetrics());
+      final curSpaceAfter = getTextStyle().getSpaceAfter(getMetrics());
+      curLineInfo.vSpaceAfter = curSpaceAfter > maxSpaceAfterBeforeClose
+          ? curSpaceAfter
+          : maxSpaceAfterBeforeClose;
     }
 
     // 防止死循环
@@ -355,6 +368,7 @@ class TextEngine extends BaseTextEngine {
     for (int i = 0; i < page.textLineList.length; i++) {
       final lineInfo = page.textLineList[i];
       lineInfo.adjust(previous);
+      lineInfo.y = y;
       _prepareTextAreaLine(page, lineInfo, 0, y);
       y += lineInfo.height + lineInfo.descent + lineInfo.vSpaceAfter;
       labels[i + 1] = page.textElementAreaVector.size();
@@ -450,8 +464,45 @@ class TextEngine extends BaseTextEngine {
 
   /// 绘制页面
   void drawPage(TextCanvas canvas, TextPage page, List<int> labels) {
+    // 绘制代码块背景
+    _drawCodeBlockBackgrounds(canvas, page);
+
     for (int i = 0; i < page.textLineList.length; i++) {
       _drawTextLine(canvas, page, page.textLineList[i], labels[i], labels[i + 1]);
+    }
+  }
+
+  /// 绘制代码块背景矩形
+  void _drawCodeBlockBackgrounds(TextCanvas canvas, TextPage page) {
+    final lines = page.textLineList;
+    final textAreaW = getTextAreaWidth().toDouble();
+    int i = 0;
+    while (i < lines.length) {
+      final bgColor = lines[i].startStyle.getBgColor();
+      if (bgColor != null) {
+        // 找连续的背景色行
+        int j = i;
+        while (j < lines.length && lines[j].startStyle.getBgColor() == bgColor) {
+          j++;
+        }
+        // 计算背景区域
+        final topY = lines[i].y.toDouble();
+        final lastLine = lines[j - 1];
+        final bottomY = (lastLine.y + lastLine.height + lastLine.descent).toDouble();
+        final padding = 6.0;
+        final rect = Rect.fromLTRB(
+          -padding, topY - padding,
+          textAreaW + padding, bottomY + padding,
+        );
+        final paint = Paint()..color = Color(bgColor);
+        canvas.canvas.drawRRect(
+          RRect.fromRectAndRadius(rect, const Radius.circular(4)),
+          paint,
+        );
+        i = j;
+      } else {
+        i++;
+      }
     }
   }
 

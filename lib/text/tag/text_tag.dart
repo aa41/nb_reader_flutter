@@ -39,16 +39,20 @@ class TextCssStyleTag extends TextTag {
   final int featureMask;
   final Map<int, int> lengths; // feature index -> value
   final Map<int, int> attributes; // feature index -> value
+  final int? color; // 文字颜色（用于语法高亮等）
+  final int? alignment; // 对齐方式
 
   const TextCssStyleTag({
     required this.depth,
     required this.featureMask,
     this.lengths = const {},
     this.attributes = const {},
+    this.color,
+    this.alignment,
   });
 
   @override
-  String toString() => 'TextCssStyleTag(depth=$depth, featureMask=$featureMask)';
+  String toString() => 'TextCssStyleTag(depth=$depth, featureMask=$featureMask, color=$color)';
 }
 
 /// Other 样式标签

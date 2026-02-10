@@ -136,25 +136,13 @@ class TextPaintContext {
     return _cachedDescent!;
   }
 
-  /// 获取图片尺寸（始终以阅读器宽度为准，等比缩放高度）
+  /// 固定图片布局高度（页面高度的 35%）
+  /// 布局时占满一行宽度，绘制时按原始宽高比居中
   Size? getImageSize(TextImage image, Size textAreaSize) {
     final maxW = textAreaSize.width;
-    final maxH = textAreaSize.height * 0.6; // 最大占页面 60%
-
-    double imgH;
-    if (image.decodedImage != null) {
-      final origW = image.decodedImage!.width.toDouble();
-      final origH = image.decodedImage!.height.toDouble();
-      // 按宽度等比缩放高度
-      imgH = origH * (maxW / origW);
-    } else {
-      // 未解码时使用默认比例
-      imgH = maxW * 0.6;
-    }
-
-    // 限制最大高度
-    if (imgH > maxH) imgH = maxH;
-    return Size(maxW, imgH.clamp(1.0, maxH));
+    final fixedH = textAreaSize.height * 0.35;
+    // 布局尺寸：宽占满文本区域，高度固定
+    return Size(maxW, fixedH.clamp(80.0, textAreaSize.height * 0.5));
   }
 
   TextPainter _getMetricsPainter() {

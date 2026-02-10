@@ -85,6 +85,14 @@ abstract class BaseTextEngine {
       fontFamily: style.getFontFamily(),
       letterSpacing: style.getLetterSpacing(),
     );
+
+    // 应用样式树中的颜色（用于语法高亮等）
+    final color = style.getColor();
+    if (color != null) {
+      paintContext.setTextColor(color);
+    } else {
+      paintContext.setTextColor(_textConfig.getTextColor());
+    }
   }
 
   /// 获取当前文本样式

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/painting.dart';
+import 'package:http/http.dart' as http;
 
 import '../element/text_image_element.dart';
 import 'text_paint_context.dart';
@@ -18,10 +19,38 @@ class _ImageDecodeCache {
   /// 获取已解码的图片，如果未解码则异步解码并返回 null
   ui.Image? get(String key, Uint8List? data) {
     if (_cache.containsKey(key)) return _cache[key];
-    if (_loading.contains(key) || data == null) return null;
-    _loading.add(key);
-    _decodeAsync(key, data);
+    if (_loading.contains(key)) return null;
+
+    // 有数据直接解码
+    if (data != null) {
+      _loading.add(key);
+      _decodeAsync(key, data);
+      return null;
+    }
+
+    // 网络图片：下载后再解码
+    if (key.startsWith('http://') || key.startsWith('https://')) {
+      _loading.add(key);
+      _downloadAndDecode(key);
+      return null;
+    }
+
     return null;
+  }
+
+  Future<void> _downloadAndDecode(String url) async {
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+        await _decodeAsync(url, response.bodyBytes);
+      } else {
+        _cache[url] = null;
+        _loading.remove(url);
+      }
+    } catch (_) {
+      _cache[url] = null;
+      _loading.remove(url);
+    }
   }
 
   Future<void> _decodeAsync(String key, Uint8List data) async {
@@ -70,47 +99,51 @@ class TextCanvas {
     painter.dispose();
   }
 
-  /// 绘制图片
+  /// 绘制图片（固定高度 + 居中显示）
   void drawImage(int x, int y, TextImage image, Size textAreaSize) {
-    final size = paintContext.getImageSize(image, textAreaSize);
-    if (size == null) return;
+    final layoutSize = paintContext.getImageSize(image, textAreaSize);
+    if (layoutSize == null) return;
+
+    final fixedH = layoutSize.height;
+    final areaW = layoutSize.width;
 
     // 尝试从缓存获取解码后的图片
     final decoded = _ImageDecodeCache.instance.get(image.id, image.data);
     if (decoded != null) {
-      // 缓存解码结果到 TextImage，方便后续 getImageSize 使用实际尺寸
       image.decodedImage ??= decoded;
-      // 绘制实际图片
-      final dst = Rect.fromLTWH(
-        x.toDouble(),
-        y.toDouble() - size.height,
-        size.width,
-        size.height,
-      );
-      final src = Rect.fromLTWH(
-        0, 0,
-        decoded.width.toDouble(),
-        decoded.height.toDouble(),
-      );
+
+      // 按固定高度计算实际渲染宽度（保持原始宽高比）
+      final origW = decoded.width.toDouble();
+      final origH = decoded.height.toDouble();
+      var renderW = origW * (fixedH / origH);
+      var renderH = fixedH;
+      // 如果宽度超出文本区域，则按宽度缩放
+      if (renderW > areaW) {
+        renderW = areaW;
+        renderH = origH * (areaW / origW);
+      }
+
+      // 水平居中
+      final offsetX = x.toDouble() + (areaW - renderW) / 2;
+      final offsetY = y.toDouble() - fixedH + (fixedH - renderH) / 2;
+
+      final dst = Rect.fromLTWH(offsetX, offsetY, renderW, renderH);
+      final src = Rect.fromLTWH(0, 0, origW, origH);
       canvas.drawImageRect(decoded, src, dst, Paint());
     } else {
-      // 图片正在解码或无数据，绘制占位框
-      final paint = Paint()
-        ..color = const Color(0xFFEEEEEE)
-        ..style = PaintingStyle.fill;
-      final rect = Rect.fromLTWH(
-        x.toDouble(),
-        y.toDouble() - size.height,
-        size.width,
-        size.height,
+      // 占位框（居中显示）
+      final placeholderW = fixedH * 0.75; // 默认 4:3 占位
+      final offsetX = x.toDouble() + (areaW - placeholderW) / 2;
+      final offsetY = y.toDouble() - fixedH + (fixedH - fixedH * 0.6) / 2;
+      final rect = Rect.fromLTWH(offsetX, offsetY, placeholderW, fixedH * 0.6);
+      canvas.drawRect(rect, Paint()..color = const Color(0xFFF0F0F0));
+      canvas.drawRect(
+        rect,
+        Paint()
+          ..color = const Color(0xFFCCCCCC)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1,
       );
-      canvas.drawRect(rect, paint);
-      // 绘制图片图标提示
-      final iconPaint = Paint()
-        ..color = const Color(0xFFCCCCCC)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1;
-      canvas.drawRect(rect, iconPaint);
     }
   }
 }

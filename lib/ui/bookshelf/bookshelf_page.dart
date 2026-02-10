@@ -40,7 +40,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['txt', 'epub'],
+        allowedExtensions: ['txt', 'epub','md','markdown'],
       );
 
       if (result == null || result.files.isEmpty) return;

@@ -54,6 +54,9 @@ class TextLine {
   /// 是否使用了 previousInfo
   bool previousInfoUsed = false;
 
+  /// Y 位置（在 prepareTextArea 中设置，用于背景绘制）
+  int y = 0;
+
   TextLine(
     this.paragraphCursor,
     this.startElementIndex,

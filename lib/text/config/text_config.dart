@@ -1,4 +1,5 @@
 import '../style/tree_text_style.dart';
+import '../tag/text_tag.dart';
 import '../tag/text_tag_type.dart';
 
 /// 文本配置项
@@ -63,13 +64,29 @@ class TextConfig {
         return parent.createChild(italic: true);
       case TextControlType.code:
       case TextControlType.tt:
-        return parent.createChild(fontFamily: 'monospace');
+        return parent.createChild(fontFamily: 'monospace', bgColor: 0xFFF5F5F5);
       case TextControlType.superscript:
         return parent.createChild(fontSize: (parent.getFontSize() * 0.7).toInt(), verticalAlign: -4);
       case TextControlType.subscript:
         return parent.createChild(fontSize: (parent.getFontSize() * 0.7).toInt(), verticalAlign: 4);
       case TextControlType.strike:
         return parent.createChild(strikeThrough: true);
+      case TextControlType.cite:
+        return parent.createChild(
+          italic: true,
+          leftIndent: 16,
+          color: 0xFF666666,
+          spaceBefore: 6,
+          spaceAfter: 6,
+          lineSpacePercent: 160,
+        );
+      case TextControlType.preformatted:
+        return parent.createChild(
+          fontFamily: 'monospace',
+          fontSize: (parent.getFontSize() * 0.85).toInt(),
+          bgColor: 0xFFF5F5F5,
+          lineSpacePercent: 140,
+        );
       default:
         return parent.createChild();
     }
@@ -77,7 +94,12 @@ class TextConfig {
 
   /// 获取 CSS 装饰样式
   TreeTextStyle getCSSDecoratedStyle(TreeTextStyle parent, dynamic styleTag) {
-    // TODO: 根据 styleTag 中的 featureMask 和 lengths 创建样式
+    if (styleTag is TextCssStyleTag) {
+      return parent.createChild(
+        color: styleTag.color,
+        alignment: styleTag.alignment,
+      );
+    }
     return parent.createChild();
   }
 }

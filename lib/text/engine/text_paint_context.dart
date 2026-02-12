@@ -16,6 +16,7 @@ class TextPaintContext {
   String? _fontFamily;
   double _letterSpacing = 0;
   int _textColor = 0xFF333333;
+  int? _backgroundColor;
 
   /// 缓存的度量值
   int? _cachedSpaceWidth;
@@ -32,6 +33,7 @@ class TextPaintContext {
     required bool strikeThrough,
     String? fontFamily,
     double letterSpacing = 0,
+    int? backgroundColor,
   }) {
     if (_fontSize != fontSize ||
         _bold != bold ||
@@ -39,7 +41,8 @@ class TextPaintContext {
         _underline != underline ||
         _strikeThrough != strikeThrough ||
         _fontFamily != fontFamily ||
-        _letterSpacing != letterSpacing) {
+        _letterSpacing != letterSpacing ||
+        _backgroundColor != backgroundColor) {
       _fontSize = fontSize;
       _bold = bold;
       _italic = italic;
@@ -47,6 +50,7 @@ class TextPaintContext {
       _strikeThrough = strikeThrough;
       _fontFamily = fontFamily;
       _letterSpacing = letterSpacing;
+      _backgroundColor = backgroundColor;
       _invalidateCache();
     }
   }
@@ -74,6 +78,7 @@ class TextPaintContext {
       decoration: _getDecoration(),
       fontFamily: _fontFamily,
       color: Color(_textColor),
+      backgroundColor: _backgroundColor != null ? Color(_backgroundColor!) : null,
       height: 1.0,
       letterSpacing: _letterSpacing != 0 ? _letterSpacing : null,
     );

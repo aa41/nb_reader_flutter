@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../../core/book_entity.dart';
 import '../../core/book_type.dart';
@@ -23,7 +27,35 @@ class _BookshelfPageState extends State<BookshelfPage> {
   @override
   void initState() {
     super.initState();
-    _loadBooks();
+    _initAndLoad();
+  }
+
+  Future<void> _initAndLoad() async {
+    await _ensureTestMarkdown();
+    await _loadBooks();
+  }
+
+  /// 首次启动时将内置测试 Markdown 复制到文档目录并添加到书架
+  Future<void> _ensureTestMarkdown() async {
+    try {
+      final docDir = await getApplicationDocumentsDirectory();
+      final destFile = File(p.join(docDir.path, 'test_markdown.md'));
+
+      // 每次都覆盖写入，保证内容最新
+      final data = await rootBundle.loadString('assets/test_markdown.md');
+      await destFile.writeAsString(data);
+
+      // 添加到书架（BookRepository 按 url 去重）
+      final book = BookEntity(
+        id: 'builtin_test_markdown',
+        title: 'Markdown 渲染测试',
+        url: destFile.path,
+        type: BookType.md,
+      );
+      await BookRepository.instance.addBook(book);
+    } catch (e) {
+      debugPrint('ensureTestMarkdown error: $e');
+    }
   }
 
   Future<void> _loadBooks() async {
@@ -40,7 +72,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['txt', 'epub'],
+        allowedExtensions: ['txt', 'epub', 'md', 'markdown'],
       );
 
       if (result == null || result.files.isEmpty) return;

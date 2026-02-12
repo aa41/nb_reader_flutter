@@ -2,11 +2,15 @@ import 'dart:math';
 import 'dart:ui';
 
 import '../config/text_config.dart';
+import '../element/text_checkbox_element.dart';
+import '../element/text_code_block_element.dart';
 import '../element/text_control_element.dart';
 import '../element/text_element.dart';
 import '../element/text_fixed_hspace_element.dart';
+import '../element/text_horizontal_rule_element.dart';
 import '../element/text_image_element.dart';
 import '../element/text_style_element.dart';
+import '../element/text_table_element.dart';
 import '../element/text_word_element.dart';
 import '../entity/text_metrics.dart';
 import '../style/tree_text_style.dart';
@@ -84,6 +88,7 @@ abstract class BaseTextEngine {
       strikeThrough: style.isStrikeThrough(),
       fontFamily: style.getFontFamily(),
       letterSpacing: style.getLetterSpacing(),
+      backgroundColor: style.getBackgroundColor(),
     );
   }
 
@@ -175,6 +180,14 @@ abstract class BaseTextEngine {
     } else if (element is TextImageElement) {
       final size = paintContext.getImageSize(element.image, getTextAreaSize());
       return size?.width.toInt() ?? 0;
+    } else if (element is TextHorizontalRuleElement) {
+      return getTextAreaWidth();
+    } else if (element is TextCodeBlockElement) {
+      return getTextAreaWidth();
+    } else if (element is TextTableElement) {
+      return getTextAreaWidth();
+    } else if (element is TextCheckboxElement) {
+      return TextCheckboxElement.size + TextCheckboxElement.rightPadding;
     }
     return 0;
   }
@@ -192,6 +205,14 @@ abstract class BaseTextEngine {
               (getTextStyle().getLineSpacePercent() - 100) / 100)
           .toInt();
       return imgH + max(lineExtra, 3);
+    } else if (element is TextHorizontalRuleElement) {
+      return TextHorizontalRuleElement.totalHeight;
+    } else if (element is TextCodeBlockElement) {
+      return _calcCodeBlockHeight(element);
+    } else if (element is TextTableElement) {
+      return _calcTableHeight(element);
+    } else if (element is TextCheckboxElement) {
+      return getWordHeight();
     }
     return 0;
   }
@@ -200,6 +221,24 @@ abstract class BaseTextEngine {
   int getElementDescent(TextElement element) {
     if (element is TextWordElement) return paintContext.getDescent();
     return 0;
+  }
+
+  /// 代码块占位符卡片高度（固定高度，避免分页问题）
+  /// 占位符内部高度 40px + 上下外边距
+  static const int _codeBlockPlaceholderInnerHeight = 40;
+
+  /// 计算代码块高度 — 固定占位符高度
+  int _calcCodeBlockHeight(TextCodeBlockElement element) {
+    return _codeBlockPlaceholderInnerHeight +
+        TextCodeBlockElement.outerMarginV * 2;
+  }
+
+  /// 计算表格高度（含外边距）
+  int _calcTableHeight(TextTableElement element) {
+    final rowH = getWordHeight() + TextTableElement.cellPaddingV * 2;
+    final contentH = (element.totalRowCount * rowH).toInt() +
+        (element.totalRowCount + 1); // 边框线
+    return contentH + TextTableElement.outerMarginV * 2;
   }
 
   /// 计算单词宽度

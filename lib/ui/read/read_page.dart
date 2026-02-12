@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/book_entity.dart';
 import '../../core/book_type.dart';
 import '../../data/book_repository.dart';
 import '../../parser/epub/epub_plugin.dart';
 import '../../parser/format_plugin.dart';
+import '../../parser/markdown/markdown_plugin.dart';
 import '../../parser/txt/txt_plugin.dart';
 import '../../text/config/text_config.dart';
 import '../../text/engine/text_model.dart';
@@ -120,6 +122,9 @@ class _ReadPageState extends State<ReadPage> {
           break;
         case BookType.epub:
           _plugin = EpubPlugin();
+          break;
+        case BookType.md:
+          _plugin = MarkdownPlugin();
           break;
       }
 
@@ -278,12 +283,170 @@ class _ReadPageState extends State<ReadPage> {
     reader.skipChapter(index);
   }
 
-  /// 阅读器区域点击：中间 1/3 区域切换菜单
+  /// 阅读器区域点击：优先级检测 链接 → 代码块 → 图片 → 中间区域菜单
   void _onReaderTap(TapUpDetails details) {
+    final reader = _readerKey.currentState;
+    if (reader == null) return;
+    final dx = details.localPosition.dx;
+    final dy = details.localPosition.dy;
+
+    // 1. 链接
+    final linkUrl = reader.findLinkAtPosition(dx, dy);
+    if (linkUrl != null && linkUrl.isNotEmpty) {
+      _openLink(linkUrl);
+      return;
+    }
+
+    // 2. 代码块
+    final codeBlock = reader.findCodeBlockAtPosition(dx, dy);
+    if (codeBlock != null) {
+      _onCodeBlockTap(codeBlock.language, codeBlock.lines);
+      return;
+    }
+
+    // 3. 图片
+    final image = reader.findImageAtPosition(dx, dy);
+    if (image != null) {
+      _onImageTap(image);
+      return;
+    }
+
+    // 4. 中间 1/3 区域切换菜单
     final width = context.size?.width ?? 0;
-    final x = details.localPosition.dx;
-    if (x > width / 3 && x < width * 2 / 3) {
+    if (dx > width / 3 && dx < width * 2 / 3) {
       _toggleMenu();
+    }
+  }
+
+  /// 代码块点击处理
+  void _onCodeBlockTap(String? language, List<String> lines) {
+    _showCodeBlockSheet(context, language, lines);
+  }
+
+  /// 图片点击处理（默认行为：全屏查看）
+  void _onImageTap(dynamic image) {
+    // 后续可扩展为全屏查看
+  }
+
+  /// 弹出代码块 BottomSheet
+  static void _showCodeBlockSheet(
+      BuildContext context, String? language, List<String> lines) {
+    final langLabel = (language != null && language.isNotEmpty) ? language : 'Code';
+    final code = lines.join('\n');
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final maxH = MediaQuery.of(ctx).size.height * 0.75;
+        return Container(
+          constraints: BoxConstraints(maxHeight: maxH),
+          decoration: const BoxDecoration(
+            color: Color(0xFFF6F8FA),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 标题栏
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: Color(0xFFE1E4E8), width: 0.5)),
+                ),
+                child: Row(
+                  children: [
+                    const Text('</>', style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700,
+                      color: Color(0xFF6A737D), fontFamily: 'monospace',
+                    )),
+                    const SizedBox(width: 8),
+                    Text(langLabel, style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w600,
+                      color: Color(0xFF24292E),
+                    )),
+                    const Spacer(),
+                    // 复制按钮
+                    GestureDetector(
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: code));
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          const SnackBar(
+                            content: Text('代码已复制'),
+                            duration: Duration(seconds: 1),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE1E4E8),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text('复制', style: TextStyle(
+                          fontSize: 13, color: Color(0xFF24292E),
+                        )),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () => Navigator.of(ctx).pop(),
+                      child: const Icon(Icons.close, size: 20, color: Color(0xFF959DA5)),
+                    ),
+                  ],
+                ),
+              ),
+              // 代码区域
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  scrollDirection: Axis.vertical,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SelectableText(
+                      code,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontFamily: 'monospace',
+                        height: 1.5,
+                        color: Color(0xFF24292E),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// 打开链接
+  void _openLink(String url) {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      // 外部链接：显示确认对话框
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('打开链接'),
+          content: Text('是否打开\n$url'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+              },
+              child: const Text('打开'),
+            ),
+          ],
+        ),
+      );
     }
   }
 

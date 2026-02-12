@@ -1,3 +1,4 @@
+import '../../element/text_code_block_element.dart';
 import '../../element/text_word_element.dart';
 import '../../entity/text_position.dart';
 import 'text_paragraph_cursor.dart';
@@ -108,6 +109,8 @@ class TextWordCursor extends TextPosition {
   }
 
   /// 移动到当前元素的字符位置
+  /// 对于 TextWordElement，charIndex 是字符偏移；
+  /// 对于 TextCodeBlockElement，charIndex 是起始行号。
   void moveToCharIndex(int charIdx) {
     var idx = charIdx < 0 ? 0 : charIdx;
     _charIndex = 0;
@@ -116,6 +119,11 @@ class TextWordCursor extends TextPosition {
       final element = _paragraphCursor.getElement(_elementIndex);
       if (element is TextWordElement) {
         if (idx <= element.length) {
+          _charIndex = idx;
+        }
+      } else if (element is TextCodeBlockElement) {
+        // 代码块：charIndex 表示从第几行开始渲染
+        if (idx < element.lines.length) {
           _charIndex = idx;
         }
       }

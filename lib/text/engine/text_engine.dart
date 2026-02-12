@@ -4,9 +4,13 @@ import 'dart:ui' as ui;
 import 'package:flutter/painting.dart';
 
 import '../config/text_config.dart';
+import '../element/text_checkbox_element.dart';
+import '../element/text_code_block_element.dart';
 import '../element/text_control_element.dart';
 import '../element/text_element.dart';
+import '../element/text_horizontal_rule_element.dart';
 import '../element/text_image_element.dart';
+import '../element/text_table_element.dart';
 import '../element/text_word_element.dart';
 import '../entity/text_element_area.dart';
 import '../entity/text_line.dart';
@@ -14,6 +18,7 @@ import '../entity/text_page.dart';
 import '../search/text_search_engine.dart';
 import '../style/text_alignment_type.dart';
 import '../tag/text_tag.dart';
+import '../tag/text_tag_type.dart';
 import 'base_text_engine.dart';
 import 'cursor/text_paragraph_cursor.dart';
 import 'cursor/text_word_cursor.dart';
@@ -137,7 +142,24 @@ class TextEngine extends BaseTextEngine {
         );
 
         remainAreaHeight -= (curLine.height + curLine.descent);
-        if (remainAreaHeight <= 0) break;
+        if (remainAreaHeight <= 0) {
+          // 尝试分割代码块：如果该行包含超高代码块，计算可容纳的行数
+          final availableH = (remainAreaHeight + curLine.height + curLine.descent).toDouble();
+          final splitLine = _trySplitCodeBlockInLine(
+              paragraphCursor, curLine, availableH);
+          if (splitLine != null) {
+            // 光标停在代码块元素上，charIndex = 下一页的起始行号
+            findCursor.moveTo(splitLine.$1, splitLine.$2);
+          } else if (findCursor.compareTo(startWordCursor) > 0) {
+            // 无法分割但页面已有内容 → 在代码块前结束页面，
+            // 让代码块在下一页以完整页面高度开始。
+            // findCursor 已在代码块前的位置，无需移动。
+          } else {
+            // 页面无其他内容，必须包含超大元素（裁剪显示）以防止死循环
+            findCursor.moveTo(curLine.endElementIndex, curLine.endCharIndex);
+          }
+          break;
+        }
         remainAreaHeight -= curLine.vSpaceAfter;
 
         findCursor.moveTo(curLine.endElementIndex, curLine.endCharIndex);
@@ -154,6 +176,57 @@ class TextEngine extends BaseTextEngine {
     return findCursor;
   }
 
+  /// 尝试将代码块拆分到当前页面内可容纳的行数。
+  /// 返回 (elementIndex, nextStartLine)，表示下一页从代码块的第 nextStartLine 行开始；
+  /// 返回 null 表示无法拆分（没有代码块，或一行都放不下）。
+  (int, int)? _trySplitCodeBlockInLine(
+      TextParagraphCursor paragraphCursor, TextLine line, double availableHeight) {
+    for (int i = line.realStartElementIndex; i < line.endElementIndex; i++) {
+      final element = paragraphCursor.getElement(i);
+      if (element is TextCodeBlockElement) {
+        final startLine =
+            (i == line.realStartElementIndex) ? line.realStartCharIndex : 0;
+        final fittingLines =
+            _calcFittingCodeLines(element, startLine, availableHeight);
+        if (fittingLines > 0 && startLine + fittingLines < element.lines.length) {
+          return (i, startLine + fittingLines);
+        }
+        return null;
+      }
+    }
+    return null;
+  }
+
+  /// 计算在 availableHeight 高度内可容纳的代码行数（从 startLine 开始）。
+  int _calcFittingCodeLines(
+      TextCodeBlockElement element, int startLine, double availableHeight) {
+    final langH =
+        (startLine == 0 && element.language != null && element.language!.isNotEmpty)
+            ? TextCodeBlockElement.langLabelHeight
+            : 0;
+    final fixedOverhead = TextCodeBlockElement.outerMarginV * 2 +
+        TextCodeBlockElement.paddingV * 2 +
+        langH;
+    final availableForLines = availableHeight - fixedOverhead;
+    if (availableForLines <= 0) return 0;
+
+    final codeMaxWidth =
+        getTextAreaWidth().toDouble() - TextCodeBlockElement.paddingH * 2;
+    final wrappedCounts = element.getWrappedLineCounts(
+        codeMaxWidth > 0 ? codeMaxWidth : double.infinity);
+
+    int fittingLines = 0;
+    double usedHeight = 0;
+    for (int i = startLine; i < wrappedCounts.length; i++) {
+      final lineHeight =
+          wrappedCounts[i] * TextCodeBlockElement.codeLineHeight;
+      if (usedHeight + lineHeight > availableForLines) break;
+      usedHeight += lineHeight;
+      fittingLines++;
+    }
+    return fittingLines;
+  }
+
   /// 准备页面（生成 TextLine 列表）
   void preparePage(TextPage page) {
     if (page.isPrepare) return;
@@ -164,13 +237,13 @@ class TextEngine extends BaseTextEngine {
     final textLines = page.textLineList;
     TextLine? curLine;
 
-    while (findCursor.compareToIgnoreChar(pageEndCursor) < 0) {
+    while (findCursor.compareTo(pageEndCursor) < 0) {
       resetTextStyle();
       final preLine = curLine;
       final paragraphCursor = findCursor.getParagraphCursor();
       final curElementIndex = findCursor.elementIndex;
 
-      final endElementIndex =
+      var endElementIndex =
           (identical(paragraphCursor, pageEndCursor.getParagraphCursor()) ||
                   paragraphCursor.paragraphIndex ==
                       pageEndCursor.paragraphIndex &&
@@ -178,6 +251,16 @@ class TextEngine extends BaseTextEngine {
                       pageEndCursor.chapterIndex)
               ? pageEndCursor.elementIndex
               : paragraphCursor.getElementCount();
+
+      // 代码块分页：如果页面结束于代码块中间（charIndex > 0），
+      // 需要将 endElementIndex 加 1 以包含该代码块元素
+      if (endElementIndex < paragraphCursor.getElementCount() &&
+          pageEndCursor.charIndex > 0) {
+        final endElem = paragraphCursor.getElement(endElementIndex);
+        if (endElem is TextCodeBlockElement) {
+          endElementIndex++;
+        }
+      }
 
       applyStyleChange(paragraphCursor, 0, curElementIndex);
 
@@ -285,6 +368,13 @@ class TextEngine extends BaseTextEngine {
       } else if (element is TextImageElement) {
         wordOccurred = true;
         isVisible = true;
+      } else if (element is TextCodeBlockElement ||
+                 element is TextTableElement ||
+                 element is TextHorizontalRuleElement ||
+                 element is TextCheckboxElement) {
+        // 块级元素必须标记为可见，否则不会被绘制
+        wordOccurred = true;
+        isVisible = true;
       } else if (isStyleElement(element)) {
         applyStyleElement(element);
       }
@@ -348,6 +438,18 @@ class TextEngine extends BaseTextEngine {
     if (curLineInfo.isEndOfParagraph()) {
       curLineInfo.vSpaceAfter = getTextStyle().getSpaceAfter(getMetrics());
     }
+
+    // 检测引用块深度：扫描段落元素中的 blockquote ControlElement
+    // 使用 realStartElementIndex（行可见内容起始前），避免扫到段落末尾的 CLOSE 标签
+    // 导致最后一行（换行后）深度归零、背景消失
+    int bqDepth = 0;
+    for (int i = 0; i < curLineInfo.realStartElementIndex; i++) {
+      final e = paragraphCursor.getElement(i);
+      if (e is TextControlElement && e.type == TextControlType.blockquote) {
+        bqDepth += e.isStart ? 1 : -1;
+      }
+    }
+    curLineInfo.blockquoteDepth = bqDepth.clamp(0, 10);
 
     // 防止死循环
     if (curLineInfo.endElementIndex == startElementIndex &&
@@ -453,6 +555,31 @@ class TextEngine extends BaseTextEngine {
         ));
         isStyleChange = false;
         isWordOccurred = true;
+      } else if (element is TextCodeBlockElement ||
+                 element is TextTableElement ||
+                 element is TextHorizontalRuleElement ||
+                 element is TextCheckboxElement) {
+        // ★ 块级元素：必须加入 area vector，否则 _drawTextLine 无法找到并绘制它们
+        // 块级元素始终从 x=0 开始，忽略 leftIndent
+        final height = getElementHeight(element);
+        page.textElementAreaVector.add(TextElementArea(
+          chapterIndex: chapterIdx,
+          paragraphIndex: paragraphIdx,
+          elementIndex: wordIndex,
+          charIndex: charIndex,
+          length: 0,
+          isLastElement: true,
+          addHyphenationSign: false,
+          isStyleChange: isStyleChange,
+          style: getTextStyle(),
+          element: element,
+          startX: 0,                     // 块级元素从左边缘开始
+          startY: width - 1,             // 右边缘
+          endX: y,                        // 上边缘（行顶部）
+          endY: y + height,              // 下边缘
+        ));
+        isStyleChange = false;
+        isWordOccurred = true;
       } else if (isStyleElement(element)) {
         applyStyleElement(element);
         isStyleChange = true;
@@ -464,8 +591,32 @@ class TextEngine extends BaseTextEngine {
 
   /// 绘制页面
   void drawPage(TextCanvas canvas, TextPage page, List<int> labels) {
+    // 预先绘制引用块背景（在文字之下）
+    _drawBlockquoteBackgrounds(canvas, page);
+
     for (int i = 0; i < page.textLineList.length; i++) {
       _drawTextLine(canvas, page, page.textLineList[i], labels[i], labels[i + 1]);
+    }
+  }
+
+  /// 绘制引用块背景（微信公众号风格：浅灰背景 + 绿色左边框）
+  void _drawBlockquoteBackgrounds(TextCanvas canvas, TextPage page) {
+    int y = 0;
+    for (int i = 0; i < page.textLineList.length; i++) {
+      final line = page.textLineList[i];
+      final lineH = line.height + line.descent + line.vSpaceAfter;
+      if (line.blockquoteDepth > 0) {
+        canvas.drawBlockBackground(
+          rect: Rect.fromLTWH(
+            0, y.toDouble(),
+            getTextAreaWidth().toDouble(), lineH.toDouble(),
+          ),
+          bgColor: const Color(0xFFF9F9F9),
+          borderLeftColor: const Color(0xFF76B947),
+          borderLeftWidth: 3,
+        );
+      }
+      y += lineH;
     }
   }
 
@@ -500,6 +651,40 @@ class TextEngine extends BaseTextEngine {
               element.length - charIndex);
         } else if (element is TextImageElement) {
           canvas.drawImage(areaX, areaY, element.image, getTextAreaSize());
+        } else if (element is TextHorizontalRuleElement) {
+          // 分割线：块级元素，使用 area.endX (=y顶部) 定位
+          final blockTop = area.endX.toDouble();
+          final blockH = getElementHeight(element).toDouble();
+          final centerY = (blockTop + blockH / 2).toInt();
+          canvas.drawHorizontalRule(0, centerY, getTextAreaWidth());
+        } else if (element is TextCodeBlockElement) {
+          // 代码块占位符卡片：使用 area.endX (=y顶部) 定位
+          final blockTop = area.endX.toDouble();
+          final totalH = getElementHeight(element).toDouble();
+          final margin = TextCodeBlockElement.outerMarginV.toDouble();
+          final blockRect = Rect.fromLTWH(
+            0, blockTop + margin,
+            getTextAreaWidth().toDouble(), totalH - margin * 2,
+          );
+          canvas.drawCodeBlock(rect: blockRect, element: element);
+        } else if (element is TextTableElement) {
+          // 表格：块级元素，使用 area.endX (=y顶部) 定位
+          final blockTop = area.endX.toDouble();
+          final totalH = getElementHeight(element).toDouble();
+          final margin = TextTableElement.outerMarginV.toDouble();
+          final tableRect = Rect.fromLTWH(
+            0, blockTop + margin,
+            getTextAreaWidth().toDouble(), totalH - margin * 2,
+          );
+          final colW = getTextAreaWidth().toDouble() / element.columnCount;
+          final colWidths = List.filled(element.columnCount, colW);
+          canvas.drawTable(
+            rect: tableRect,
+            element: element,
+            colWidths: colWidths,
+          );
+        } else if (element is TextCheckboxElement) {
+          canvas.drawCheckbox(areaX, areaY, element.checked);
         }
       }
       charIndex = 0;
@@ -520,6 +705,108 @@ class TextEngine extends BaseTextEngine {
 
   /// 获取搜索高亮关键词
   String? get highlightKeyword => _highlightKeyword;
+
+  /// 查找给定屏幕坐标处的链接 URL
+  /// [localX], [localY] 是相对于 Widget 左上角的坐标
+  /// 返回链接 URL，如果点击位置不在链接上则返回 null
+  String? findLinkAtPosition(double localX, double localY) {
+    if (_textModel == null || _textPageController == null) return null;
+    final page = _textPageController!.getCurrentPage();
+    if (page == null || !page.isPrepare) return null;
+
+    // 转换为文本区域坐标
+    final textX = localX - getTextConfig().getMarginLeft();
+    final textY = localY - getTextConfig().getMarginTop();
+    if (textX < 0 || textY < 0) return null;
+
+    // 查找被点击的 TextElementArea
+    final areas = page.textElementAreaVector.areas();
+    TextElementArea? hitArea;
+    for (final area in areas) {
+      // area 坐标：startX=左边, startY=右边, endX=上边, endY=下边
+      final left = area.startX.toDouble();
+      final right = (area.startY + 1).toDouble();
+      final top = area.endX.toDouble();
+      final bottom = area.endY.toDouble();
+      if (textX >= left && textX <= right && textY >= top && textY <= bottom) {
+        hitArea = area;
+        break;
+      }
+    }
+    if (hitArea == null) return null;
+
+    // 扫描段落的 tag 流，跟踪链接状态直到 hitArea.elementIndex
+    final chapterCursor = _textModel!.getChapterCursor(hitArea.chapterIndex);
+    final tagIter2 = chapterCursor.getParagraphContent(hitArea.paragraphIndex);
+    String? activeLinkUrl;
+    // 遍历 tags 跟踪链接状态和元素位置
+    int tagElementIndex = -1; // 当前 tag 对应的元素索引
+    while (tagIter2.hasNext()) {
+      final tag = tagIter2.next();
+      if (tag is TextLinkStartTag) {
+        activeLinkUrl = tag.url;
+      } else if (tag is TextLinkEndTag) {
+        activeLinkUrl = null;
+      }
+      // 跟踪元素索引：只有生成元素的 tag 才递增
+      if (tag is TextContentTag ||
+          tag is TextImageTag ||
+          tag is TextControlTag ||
+          tag is TextCssStyleTag ||
+          tag is TextOtherStyleTag ||
+          tag is TextStyleCloseTag ||
+          tag is TextFixedHSpaceTag ||
+          tag is TextHorizontalRuleTag ||
+          tag is TextCodeBlockTag ||
+          tag is TextTableTag ||
+          tag is TextBlockquoteStartTag ||
+          tag is TextBlockquoteEndTag) {
+        tagElementIndex++;
+      }
+      if (tagElementIndex >= hitArea.elementIndex) break;
+    }
+
+    return activeLinkUrl;
+  }
+
+  /// 查找给定屏幕坐标处的代码块元素
+  TextCodeBlockElement? findCodeBlockAtPosition(double localX, double localY) {
+    final area = _findHitArea(localX, localY);
+    if (area == null) return null;
+    final elem = area.element;
+    return elem is TextCodeBlockElement ? elem : null;
+  }
+
+  /// 查找给定屏幕坐标处的图片元素
+  TextImageElement? findImageAtPosition(double localX, double localY) {
+    final area = _findHitArea(localX, localY);
+    if (area == null) return null;
+    final elem = area.element;
+    return elem is TextImageElement ? elem : null;
+  }
+
+  /// 查找给定屏幕坐标处的 TextElementArea（通用 hit 测试）
+  TextElementArea? _findHitArea(double localX, double localY) {
+    if (_textModel == null || _textPageController == null) return null;
+    final page = _textPageController!.getCurrentPage();
+    if (page == null || !page.isPrepare) return null;
+
+    final textX = localX - getTextConfig().getMarginLeft();
+    final textY = localY - getTextConfig().getMarginTop();
+    if (textX < 0 || textY < 0) return null;
+
+    final areas = page.textElementAreaVector.areas();
+    for (final area in areas) {
+      final left = area.startX.toDouble();
+      final right = (area.startY + 1).toDouble();
+      final top = area.endX.toDouble();
+      final bottom = area.endY.toDouble();
+      if (textX >= left && textX <= right && textY >= top && textY <= bottom) {
+        return area;
+      }
+    }
+    return null;
+  }
 
   /// 完整绘制入口
   /// [drawHighlight] 仅当前页传 true，前后页传 false

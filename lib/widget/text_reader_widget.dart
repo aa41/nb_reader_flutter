@@ -3,6 +3,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../text/config/text_config.dart';
+import '../text/element/text_code_block_element.dart';
+import '../text/element/text_image_element.dart';
 import '../text/engine/text_canvas.dart';
 import '../text/engine/text_engine.dart';
 import '../text/engine/text_model.dart';
@@ -21,6 +23,16 @@ import 'page_enum.dart';
 typedef OnPageChanged = void Function(
     PagePosition position, PageProgress progress);
 
+/// 代码块点击回调
+typedef OnCodeBlockTap = void Function(
+    String? language, List<String> lines);
+
+/// 图片点击回调
+typedef OnImageTap = void Function(TextImageElement image);
+
+/// 链接点击回调
+typedef OnLinkTap = void Function(String url);
+
 /// 文本阅读器 Widget
 /// 集成 TextEngine + PageAnimation + GestureDetector
 ///
@@ -31,6 +43,15 @@ class TextReaderWidget extends StatefulWidget {
   final TextConfig? textConfig;
   final PageAnimType animType;
   final OnPageChanged? onPageChanged;
+
+  /// 代码块点击回调（不设置则使用默认行为）
+  final OnCodeBlockTap? onCodeBlockTap;
+
+  /// 图片点击回调（不设置则使用默认行为）
+  final OnImageTap? onImageTap;
+
+  /// 链接点击回调（不设置则使用默认行为）
+  final OnLinkTap? onLinkTap;
 
   /// header/footer 信息（绘制在 margin 区域）
   final String? headerText;
@@ -46,6 +67,9 @@ class TextReaderWidget extends StatefulWidget {
     this.textConfig,
     this.animType = PageAnimType.slide,
     this.onPageChanged,
+    this.onCodeBlockTap,
+    this.onImageTap,
+    this.onLinkTap,
     this.headerText,
     this.footerLeftText,
     this.footerRightText,
@@ -365,6 +389,21 @@ class TextReaderWidgetState extends State<TextReaderWidget>
     _engine.clearHighlightResult();
     _pageAnim?.invalidateCache();
     _invalidate();
+  }
+
+  /// 查找给定屏幕坐标处的链接 URL
+  String? findLinkAtPosition(double localX, double localY) {
+    return _engine.findLinkAtPosition(localX, localY);
+  }
+
+  /// 查找给定屏幕坐标处的代码块元素
+  TextCodeBlockElement? findCodeBlockAtPosition(double localX, double localY) {
+    return _engine.findCodeBlockAtPosition(localX, localY);
+  }
+
+  /// 查找给定屏幕坐标处的图片元素
+  TextImageElement? findImageAtPosition(double localX, double localY) {
+    return _engine.findImageAtPosition(localX, localY);
   }
 
   /// 获取引擎实例（用于获取章节列表等信息）

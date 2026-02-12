@@ -54,6 +54,9 @@ class TextLine {
   /// 是否使用了 previousInfo
   bool previousInfoUsed = false;
 
+  /// 引用块嵌套深度（0=非引用，>0=在引用块内）
+  int blockquoteDepth = 0;
+
   TextLine(
     this.paragraphCursor,
     this.startElementIndex,

@@ -1,8 +1,11 @@
+import '../../element/text_code_block_element.dart';
 import '../../element/text_control_element.dart';
 import '../../element/text_element.dart';
 import '../../element/text_fixed_hspace_element.dart';
+import '../../element/text_horizontal_rule_element.dart';
 import '../../element/text_image_element.dart';
 import '../../element/text_style_element.dart';
+import '../../element/text_table_element.dart';
 import '../../element/text_word_element.dart';
 import '../../entity/text_paragraph.dart';
 import '../../entity/text_position.dart';
@@ -145,6 +148,26 @@ class _ParagraphContentDecoder {
         elements.add(TextImageElement(
           TextImage(id: tag.id, filePath: tag.id, data: tag.imageData),
         ));
+      } else if (tag is TextHorizontalRuleTag) {
+        elements.add(const TextHorizontalRuleElement());
+      } else if (tag is TextCodeBlockTag) {
+        elements.add(TextCodeBlockElement(
+          language: tag.language,
+          lines: tag.lines,
+        ));
+      } else if (tag is TextTableTag) {
+        elements.add(TextTableElement(
+          headers: tag.headers,
+          rows: tag.rows,
+          alignments: tag.alignments,
+        ));
+      } else if (tag is TextBlockquoteStartTag) {
+        // 引用块通过 ControlType.blockquote 处理样式
+        elements.add(TextControlElement(TextControlType.blockquote, true));
+      } else if (tag is TextBlockquoteEndTag) {
+        elements.add(TextControlElement(TextControlType.blockquote, false));
+      } else if (tag is TextLinkStartTag || tag is TextLinkEndTag) {
+        // 链接标签在 ControlTag 中已处理（link ControlType）
       }
     }
   }

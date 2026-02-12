@@ -67,13 +67,58 @@ class TextConfig {
         return parent.createChild(italic: true);
       case TextControlType.code:
       case TextControlType.tt:
-        return parent.createChild(fontFamily: 'monospace');
+        return parent.createChild(
+          fontFamily: 'monospace',
+          backgroundColor: 0xFFF0F0F0, // 行内代码浅灰背景
+        );
       case TextControlType.superscript:
         return parent.createChild(fontSize: (parent.getFontSize() * 0.7).toInt(), verticalAlign: -4);
       case TextControlType.subscript:
         return parent.createChild(fontSize: (parent.getFontSize() * 0.7).toInt(), verticalAlign: 4);
       case TextControlType.strike:
         return parent.createChild(strikeThrough: true);
+
+      // === Markdown 扩展样式（微信公众号风格） ===
+      case TextControlType.blockquote:
+        return parent.createChild(
+          leftIndent: 16,
+          spaceBefore: 8,
+          spaceAfter: 8,
+        );
+      case TextControlType.highlight:
+        return parent.createChild(backgroundColor: 0xFFFFF3B0); // 黄色高亮背景
+      case TextControlType.link:
+        return parent.createChild(); // 颜色在渲染层处理（#576b95）
+      case TextControlType.codeBlockLine:
+        return parent.createChild(fontFamily: 'monospace');
+      case TextControlType.tableCell:
+        return parent.createChild();
+      case TextControlType.tableHeaderCell:
+        return parent.createChild(bold: true);
+      case TextControlType.horizontalRule:
+        return parent.createChild();
+      case TextControlType.imageCaption:
+        return parent.createChild(
+          fontSize: 12,
+          alignment: 1, // center
+          spaceBefore: 4,
+          spaceAfter: 8,
+        );
+      case TextControlType.taskChecked:
+      case TextControlType.taskUnchecked:
+        return parent.createChild();
+      case TextControlType.kbd:
+        return parent.createChild(
+          fontFamily: 'monospace',
+          backgroundColor: 0xFFF0F0F0, // 浅灰背景
+        );
+      case TextControlType.footnoteRef:
+        return parent.createChild(
+          fontSize: (parent.getFontSize() * 0.7).toInt(),
+          verticalAlign: -4,
+        );
+      case TextControlType.underline:
+        return parent.createChild(underline: true);
       default:
         return parent.createChild();
     }

@@ -21,6 +21,8 @@ class TreeTextStyle {
   final bool _allowHyphenations;
   final String? _fontFamily;
   final double _letterSpacing;
+  /// 背景色（ARGB，null 表示无背景）—— 用于 mark 高亮、kbd 按键等
+  final int? _backgroundColor;
 
   TreeTextStyle({
     this.parent,
@@ -40,6 +42,7 @@ class TreeTextStyle {
     bool allowHyphenations = true,
     String? fontFamily,
     double letterSpacing = 0.5,
+    int? backgroundColor,
   })  : _fontSize = fontSize,
         _leftIndent = leftIndent,
         _rightIndent = rightIndent,
@@ -55,7 +58,8 @@ class TreeTextStyle {
         _strikeThrough = strikeThrough,
         _allowHyphenations = allowHyphenations,
         _fontFamily = fontFamily,
-        _letterSpacing = letterSpacing;
+        _letterSpacing = letterSpacing,
+        _backgroundColor = backgroundColor;
 
   int getFontSize([TextMetrics? metrics]) => _fontSize;
   int getLeftIndent(TextMetrics metrics) => _leftIndent;
@@ -73,6 +77,7 @@ class TreeTextStyle {
   bool allowHyphenations() => _allowHyphenations;
   String? getFontFamily() => _fontFamily;
   double getLetterSpacing() => _letterSpacing;
+  int? getBackgroundColor() => _backgroundColor;
 
   /// 创建子样式
   TreeTextStyle createChild({
@@ -92,6 +97,7 @@ class TreeTextStyle {
     bool? allowHyphenations,
     String? fontFamily,
     double? letterSpacing,
+    int? backgroundColor,
   }) {
     return TreeTextStyle(
       parent: this,
@@ -111,6 +117,7 @@ class TreeTextStyle {
       allowHyphenations: allowHyphenations ?? _allowHyphenations,
       fontFamily: fontFamily ?? _fontFamily,
       letterSpacing: letterSpacing ?? _letterSpacing,
+      backgroundColor: backgroundColor ?? _backgroundColor,
     );
   }
 

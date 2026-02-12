@@ -252,14 +252,26 @@ class TextPageController {
 
     final pages = <TextPage>[];
     final pageStartCursor = TextWordCursor.copy(curWordCursor);
+    int iteration = 0;
 
     while (curWordCursor < endWordCursor) {
+      iteration++;
       final pageEndCursor = _findPageEndCursor(pageWidth, pageHeight, curWordCursor);
+
+      // 安全阀：如果 findPageEndCursor 未能推进光标，强制跳过当前段落，
+      // 防止任何边界情况导致死循环 → OOM。
+      if (pageEndCursor <= curWordCursor) {
+        if (!curWordCursor.moveToNextParagraph()) break;
+        pageStartCursor.updateCursor(curWordCursor);
+        continue;
+      }
+
       pages.add(TextPage(pageStartCursor, pageEndCursor));
       curWordCursor.updateCursor(pageEndCursor);
       pageStartCursor.updateCursor(pageEndCursor);
-    }
 
+      if (iteration > 500) break;
+    }
     return _ChapterWrapper(chapterIndex, pages);
   }
 

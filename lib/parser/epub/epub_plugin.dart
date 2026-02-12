@@ -229,6 +229,16 @@ class EpubPlugin implements FormatPlugin {
   }
 
   @override
+  String? getChapterPlainText(TextChapter chapter) {
+    // 从解析后的 tag 结构构建纯文本，而非直接 strip HTML。
+    // 这样可以正确尊重 fragment 边界（startFragmentId / endFragmentId），
+    // 并保证纯文本与 tag 内容完全一致，便于搜索偏移精确映射。
+    final content = getChapterContent(chapter);
+    if (content == null) return null;
+    return content.toPlainText();
+  }
+
+  @override
   ImageDataResolver? get imageDataResolver {
     return (String imagePath) {
       final resolved = _resolvePathInEpub(imagePath);

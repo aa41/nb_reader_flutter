@@ -18,8 +18,10 @@ import '../../text/entity/text_chapter.dart';
 import '../../text/entity/text_position.dart';
 import '../../widget/page_enum.dart';
 import '../../widget/text_reader_widget.dart';
+import '../../text/search/text_search_engine.dart';
 import 'catalog_drawer.dart';
 import 'read_menu.dart';
+import 'search_page.dart';
 
 /// 阅读页面
 class ReadPage extends StatefulWidget {
@@ -37,6 +39,7 @@ class _ReadPageState extends State<ReadPage> {
 
   FormatPlugin? _plugin;
   TextModel? _model;
+  TextSearchEngine? _searchEngine;
   List<TextChapter> _chapters = [];
 
   bool _isLoading = true;
@@ -62,6 +65,13 @@ class _ReadPageState extends State<ReadPage> {
   PageAnimType _animType = PageAnimType.simulation;
   late TextConfig _textConfig;
 
+  /// 安全区内边距（刘海/状态栏）
+  double _safePaddingTop = 0;
+  bool _safePaddingInitialized = false;
+
+  /// header/footer 信息区域高度（固定值）
+  static const int _pageInfoHeight = 24;
+
   // 时间刷新定时器
   Timer? _clockTimer;
   String _timeStr = '';
@@ -83,6 +93,7 @@ class _ReadPageState extends State<ReadPage> {
   void dispose() {
     _clockTimer?.cancel();
     _saveProgress();
+    _searchEngine?.dispose();
     _plugin?.release();
     // 退出全屏
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -115,6 +126,10 @@ class _ReadPageState extends State<ReadPage> {
       await _plugin!.openBook(widget.book.url);
       _model = TextModel(_plugin!);
       _chapters = _model!.getChapters();
+
+      // 初始化搜索引擎并预加载章节文本
+      _searchEngine = TextSearchEngine(_plugin!);
+      _searchEngine!.preloadChapterTexts();
 
       setState(() {
         _isLoading = false;
@@ -213,18 +228,47 @@ class _ReadPageState extends State<ReadPage> {
       _showMenu = !_showMenu;
       if (!_showMenu) _showSetting = false;
     });
-
-    if (_showMenu) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    } else {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    }
   }
 
   void _openCatalog() {
     setState(() => _showMenu = false);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _scaffoldKey.currentState?.openDrawer();
+  }
+
+  void _openSearch() async {
+    setState(() => _showMenu = false);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
+    if (_searchEngine == null) return;
+
+    final result = await Navigator.of(context).push<SearchResult>(
+      MaterialPageRoute(
+        builder: (_) => SearchPage(searchEngine: _searchEngine!),
+      ),
+    );
+
+    // 先恢复沉浸模式并等待一帧，让 MediaQuery.padding.top 稳定后再跳转，
+    // 避免异步 safeTop 变化触发 updateTextConfig 导致的二次跳转。
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    // 等待一帧让布局完成
+    if (mounted) {
+      await WidgetsBinding.instance.endOfFrame;
+    }
+
+    if (result != null && mounted) {
+      // 定位到搜索结果所在段落并跳转 + 高亮
+      final reader = _readerKey.currentState;
+      if (reader != null) {
+        final searchPos = _searchEngine!.findPositionForResult(result);
+        if (searchPos != null) {
+          final position = reader.engine.resolveSearchPosition(searchPos);
+          reader.setHighlight(result.keyword, position);
+        } else {
+          reader.skipChapter(result.chapterIndex);
+        }
+      }
+    }
   }
 
   void _onChapterTap(int index) {
@@ -234,14 +278,26 @@ class _ReadPageState extends State<ReadPage> {
     reader.skipChapter(index);
   }
 
+  /// 阅读器区域点击：中间 1/3 区域切换菜单
+  void _onReaderTap(TapUpDetails details) {
+    final width = context.size?.width ?? 0;
+    final x = details.localPosition.dx;
+    if (x > width / 3 && x < width * 2 / 3) {
+      _toggleMenu();
+    }
+  }
+
   TextConfig _buildTextConfig() {
+    // marginTop 需要包含: safe area + header 信息区 + 用户边距
+    // marginBottom 需要包含: footer 信息区 + 用户边距
+    final safeTop = _safePaddingInitialized ? _safePaddingTop.toInt() : 0;
     return TextConfig(
       textColor: _isNightMode ? 0xFF999999 : 0xFF333333,
       bgColor: _isNightMode ? 0xFF1A1A1A : 0xFFF5F0E8,
       marginLeft: _marginHorizontal,
       marginRight: _marginHorizontal,
-      marginTop: _marginVertical,
-      marginBottom: _marginVertical,
+      marginTop: safeTop + _pageInfoHeight + _marginVertical,
+      marginBottom: _pageInfoHeight + _marginVertical,
       baseTextStyle: TreeTextStyle(
         fontSize: _fontSize,
         lineSpacePercent: _lineSpacePercent,
@@ -341,8 +397,21 @@ class _ReadPageState extends State<ReadPage> {
       );
     }
 
+    // 计算 safe area 并在首次/变化时更新 TextConfig
+    final safeTop = MediaQuery.of(context).padding.top;
+    if (!_safePaddingInitialized || _safePaddingTop != safeTop) {
+      _safePaddingTop = safeTop;
+      _safePaddingInitialized = true;
+      // 延迟重建 config，避免在 build 中直接 setState
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() => _textConfig = _buildTextConfig());
+          _readerKey.currentState?.updateTextConfig(_textConfig);
+        }
+      });
+    }
+
     final bgColor = Color(_textConfig.bgColor);
-    final textColor = Color(_textConfig.textColor);
 
     return Scaffold(
       key: _scaffoldKey,
@@ -357,76 +426,31 @@ class _ReadPageState extends State<ReadPage> {
       drawerEnableOpenDragGesture: false,
       body: Stack(
         children: [
-          // 阅读器主体
-          Column(
-            children: [
-              // Header
-              Container(
-                color: bgColor,
-                padding: EdgeInsets.only(
-                  top: MediaQuery.of(context).padding.top + 4,
-                  left: 16,
-                  right: 16,
-                  bottom: 4,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _chapterTitle,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: textColor.withValues(alpha: 0.5),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // Reader
-              Expanded(
-                child: TextReaderWidget(
-                  key: _readerKey,
-                  textModel: _model!,
-                  textConfig: _textConfig,
-                  animType: _animType,
-                  onPageChanged: _onPageChanged,
-                  onMenuTap: _toggleMenu,
-                ),
-              ),
-              // Footer
-              Container(
-                color: bgColor,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 4,
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      _pageCount > 0
-                          ? '${_pageIndex + 1}/$_pageCount'
-                          : '',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: textColor.withValues(alpha: 0.4),
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      _timeStr,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: textColor.withValues(alpha: 0.4),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          // 阅读器主体（全屏，header/footer 绘制在 Canvas 的 margin 区域）
+          Positioned.fill(
+            child: TextReaderWidget(
+              key: _readerKey,
+              textModel: _model!,
+              textConfig: _textConfig,
+              animType: _animType,
+              onPageChanged: _onPageChanged,
+              headerText: _chapterTitle,
+              footerLeftText: _pageCount > 0
+                  ? '${_pageIndex + 1}/$_pageCount'
+                  : null,
+              footerRightText: _timeStr,
+              safePaddingTop: _safePaddingTop,
+            ),
           ),
+
+          // 居中点击检测层（与 TextReaderWidget 的 pan 手势通过手势竞技场自动区分）
+          if (!_showMenu)
+            Positioned.fill(
+              child: GestureDetector(
+                onTapUp: _onReaderTap,
+                behavior: HitTestBehavior.translucent,
+              ),
+            ),
 
           // 菜单遮罩 + 菜单
           if (_showMenu) ...[
@@ -497,6 +521,7 @@ class _ReadPageState extends State<ReadPage> {
                   : ReadBottomMenu(
                       isNightMode: _isNightMode,
                       onCatalogTap: _openCatalog,
+                      onSearchTap: _openSearch,
                       onBookmarkTap: _saveProgressWithFeedback,
                       onNightModeTap: _toggleNightMode,
                       onSettingTap: () {

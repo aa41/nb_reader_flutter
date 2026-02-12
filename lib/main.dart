@@ -1090,6 +1090,9 @@ class _MockFormatPlugin extends FormatPlugin {
   TextContent? getChapterContent(TextChapter chapter) => _contents[chapter.url];
 
   @override
+  String? getChapterPlainText(TextChapter chapter) => null;
+
+  @override
   void release() {}
 }
 
@@ -1739,6 +1742,9 @@ class _LongContentMockPlugin extends FormatPlugin {
   TextContent? getChapterContent(TextChapter chapter) => _contents[chapter.url];
 
   @override
+  String? getChapterPlainText(TextChapter chapter) => null;
+
+  @override
   void release() {}
 }
 
@@ -1814,30 +1820,6 @@ class _Phase5TestPageState extends State<Phase5TestPage> {
               key: _readerKey,
               textModel: _model,
               onPageChanged: _onPageChanged,
-              onMenuTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('菜单区域点击（待 Phase 7 实现）'),
-                    duration: Duration(seconds: 1),
-                  ),
-                );
-              },
-            ),
-          ),
-          // 底部提示
-          Container(
-            color: Colors.indigo.shade50,
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('← 左侧点击上一页',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
-                Text('中间点击=菜单',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
-                Text('右侧点击下一页 →',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
-              ],
             ),
           ),
         ],
@@ -1941,30 +1923,6 @@ class _Phase6TestPageState extends State<Phase6TestPage> {
               textModel: _model,
               animType: _animType,
               onPageChanged: _onPageChanged,
-              onMenuTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('菜单区域点击（待 Phase 7 实现）'),
-                    duration: Duration(seconds: 1),
-                  ),
-                );
-              },
-            ),
-          ),
-          // 底部提示
-          Container(
-            color: Colors.deepPurple.shade50,
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('← 拖拽/点击上一页',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
-                Text('中间=菜单',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
-                Text('拖拽/点击下一页 →',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
-              ],
             ),
           ),
         ],

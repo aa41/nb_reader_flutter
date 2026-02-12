@@ -23,6 +23,11 @@ abstract class FormatPlugin {
   /// 获取章节内容（直接输出 TextTag 列表，无二进制中间格式）
   TextContent? getChapterContent(TextChapter chapter);
 
+  /// 获取章节纯文本（用于全文搜索/预索引）
+  /// 实现应与内容解析保持一致的空白折叠与段落换行策略，
+  /// 以便后续根据字符偏移精确映射到 TextFixedPosition。
+  String? getChapterPlainText(TextChapter chapter);
+
   /// 获取图片数据解析器（用于 EPUB 等格式内嵌图片的加载）
   ImageDataResolver? get imageDataResolver => null;
 

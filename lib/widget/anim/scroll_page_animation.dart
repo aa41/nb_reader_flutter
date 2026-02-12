@@ -5,57 +5,59 @@ import 'package:flutter/material.dart';
 import '../page_enum.dart';
 import 'page_animation.dart';
 
-/// 滚动动画 - 连续垂直滚动
-/// 对应 Kotlin ScrollPageAnimation.kt
+/// 滚动动画 — 连续垂直滚动，行为类似原生 ScrollView。
 ///
-/// 与其他翻页动画不同，滚动动画不是离散的"翻一页"，而是连续滚动。
-/// 使用 [_PageLayout] 管理 2 个页面在视口中的垂直位置，
-/// 当一页滚出视口时回收并动态填充新页面。
+/// 核心模型：用单一 [_pageOffset] 追踪当前页在视口中的垂直偏移（像素）：
+///   _pageOffset == 0  → 当前页完全占满视口
+///   _pageOffset < 0   → 向上滚动，下一页从底部进入
+///   _pageOffset > 0   → 向下滚动，上一页从顶部进入
+///
+/// 偏移量超过一个视口高度时自动触发翻页并调整偏移，
+/// 避免了旧实现中 delta 累积误差和双布局状态管理的复杂性。
 class ScrollPageAnimation extends PageAnimation {
-  // 触摸坐标
-  int _touchX = 0;
-  int _touchY = 0;
-  int _lastY = 0;
+  // ==================== 滚动状态 ====================
 
-  // 页面布局数组(2个，循环使用)
-  final _pageLayouts = [_PageLayout(), _PageLayout()];
+  /// 当前页顶边相对于视口顶边的偏移（像素）
+  double _pageOffset = 0;
 
-  // 滚动状态(独立于基类的 status)
-  _Status _scrollStatus = _Status.none;
+  /// 上一次触摸 Y 坐标（计算帧间增量用）
+  double _lastTouchY = 0;
 
-  // Picture 缓存(独立于基类，按 PageType 缓存)
-  final Map<PageType, ui.Picture> _pictures = {};
+  /// 上一帧 fling simulation 的输出值（计算帧间增量用）
+  double _lastFlingValue = 0;
+
+  /// 独立于基类的滚动状态机
+  _ScrollStatus _status = _ScrollStatus.idle;
+
+  // ==================== Picture 缓存 ====================
+
+  final Map<PageType, ui.Picture> _pictureCache = {};
 
   ScrollPageAnimation({
     required super.vsync,
     required super.callback,
   }) {
-    // 替换基类的 AnimationController 为无边界版本
-    // fling 模拟的 Y 坐标值远超 [0,1] 范围
+    // 基类创建的 AnimationController 范围为 [0,1]，
+    // fling simulation 值域远超此范围，替换为 unbounded 版本。
     animController.dispose();
     animController = AnimationController.unbounded(vsync: vsync);
     animController.addListener(_onFlingTick);
-    animController.addStatusListener(_onFlingStatus);
+    animController.addStatusListener(_onFlingStatusChanged);
   }
 
-  bool get _isRunning => _scrollStatus != _Status.none;
-
-  /// 获取竖直滑动距离(帧间增量)
-  int get _scrollY => _isRunning ? _touchY - _lastY : 0;
-
-  // ========== 重写状态查询 ==========
+  // ==================== 状态查询（重写基类） ====================
 
   @override
-  bool get isAnimating => _scrollStatus == _Status.fling;
+  bool get isAnimating => _status == _ScrollStatus.fling;
 
   @override
   bool get isDragging =>
-      _scrollStatus == _Status.press || _scrollStatus == _Status.move;
+      _status == _ScrollStatus.press || _status == _ScrollStatus.drag;
 
   @override
-  bool get isIdle => _scrollStatus == _Status.none;
+  bool get isIdle => _status == _ScrollStatus.idle;
 
-  // ========== 视口设置 ==========
+  // ==================== 视口 ====================
 
   @override
   void setViewPort(int width, int height) {
@@ -63,394 +65,267 @@ class ScrollPageAnimation extends PageAnimation {
     if (viewWidth == width && viewHeight == height) return;
     viewWidth = width;
     viewHeight = height;
-    _abortAnim();
-    for (final layout in _pageLayouts) {
-      layout.setHeight(height);
-    }
-    _invalidatePictures();
-    _layout();
+    _stopFlingImmediate();
+    _pageOffset = 0;
+    _disposePictures();
   }
 
-  // ========== 手势处理 ==========
+  // ==================== 手势处理 ====================
 
   @override
   void onPanStart(DragStartDetails details) {
-    // 如果正在 fling，先中止
-    if (_scrollStatus == _Status.fling) {
-      _abortAnim();
+    // 中断正在进行的 fling
+    if (_status == _ScrollStatus.fling) {
+      _stopFlingImmediate();
     }
-
-    final x = details.localPosition.dx.toInt();
-    final y = details.localPosition.dy.toInt();
-    _touchX = x;
-    _touchY = y;
-    _lastY = y;
-    _scrollStatus = _Status.press;
+    _lastTouchY = details.localPosition.dy;
+    _status = _ScrollStatus.press;
   }
 
   @override
   void onPanUpdate(DragUpdateDetails details) {
-    // 如果状态异常，当作 press 重新开始
-    if (_scrollStatus == _Status.none || _scrollStatus == _Status.fling) {
+    // 从异常状态恢复
+    if (_status == _ScrollStatus.idle || _status == _ScrollStatus.fling) {
       onPanStart(DragStartDetails(
         localPosition: details.localPosition,
         globalPosition: details.globalPosition,
       ));
     }
 
-    final x = details.localPosition.dx.toInt();
-    final y = details.localPosition.dy.toInt();
-    _setTouchPoint(x, y);
-    _scrollStatus = _Status.move;
+    final y = details.localPosition.dy;
+    final delta = y - _lastTouchY;
+    _lastTouchY = y;
+
+    _status = _ScrollStatus.drag;
+    _applyScrollDelta(delta);
     callback.invalidate();
   }
 
   @override
   void onPanEnd(DragEndDetails details) {
-    if (_scrollStatus == _Status.none) return;
+    if (_status == _ScrollStatus.idle) return;
 
-    // 使用 Flutter GestureDetector 提供的速度(等价于 VelocityTracker)
-    final velocityY = details.velocity.pixelsPerSecond.dy;
-    _startFling(velocityY);
+    final vy = details.velocity.pixelsPerSecond.dy;
+    // 速度太小直接停止，避免无意义的微弱惯性
+    if (vy.abs() < 50.0) {
+      _status = _ScrollStatus.idle;
+      callback.invalidate();
+      return;
+    }
+    _startFling(vy);
   }
 
-  void _setTouchPoint(int x, int y) {
-    _lastY = _touchY;
-    _touchX = x;
-    _touchY = y;
+  // ==================== 滚动核心逻辑 ====================
+
+  /// 应用滚动增量，处理翻页与边界。
+  /// 返回 true 表示已触及边界（调用方可据此停止 fling）。
+  bool _applyScrollDelta(double delta) {
+    final vh = viewHeight.toDouble();
+    _pageOffset += delta;
+
+    // --- 向上滚动（手指上滑，_pageOffset 减小）→ 翻到下一页 ---
+    while (_pageOffset <= -vh) {
+      if (!callback.hasPage(PageType.next)) {
+        _pageOffset = 0;
+        return true;
+      }
+      _pageOffset += vh;
+      callback.turnPage(PageType.next);
+      _shiftPicturesForward();
+    }
+
+    // --- 向下滚动（手指下滑，_pageOffset 增大）→ 翻到上一页 ---
+    while (_pageOffset >= vh) {
+      if (!callback.hasPage(PageType.previous)) {
+        _pageOffset = 0;
+        return true;
+      }
+      _pageOffset -= vh;
+      callback.turnPage(PageType.previous);
+      _shiftPicturesBackward();
+    }
+
+    // --- 边界钳制：无下一页时禁止向上滚动 ---
+    if (_pageOffset < 0 && !callback.hasPage(PageType.next)) {
+      _pageOffset = 0;
+      return true;
+    }
+
+    // --- 边界钳制：无上一页时禁止向下滚动 ---
+    if (_pageOffset > 0 && !callback.hasPage(PageType.previous)) {
+      _pageOffset = 0;
+      return true;
+    }
+
+    return false;
   }
 
-  // ========== Fling 惯性动画 ==========
+  // ==================== Fling 惯性动画 ====================
 
   void _startFling(double velocity) {
-    _scrollStatus = _Status.fling;
-    // ClampingScrollSimulation 模拟 Android Scroller.fling 的减速效果
+    _status = _ScrollStatus.fling;
+    _lastFlingValue = 0;
+    // ClampingScrollSimulation 模拟 Android 原生减速曲线
     animController.animateWith(
-      ClampingScrollSimulation(
-        position: _touchY.toDouble(),
-        velocity: velocity,
-      ),
+      ClampingScrollSimulation(position: 0, velocity: velocity),
     );
   }
 
   void _onFlingTick() {
-    if (_scrollStatus != _Status.fling) return;
-    final y = animController.value.toInt();
-    _setTouchPoint(_touchX, y);
-    callback.invalidate();
-  }
+    if (_status != _ScrollStatus.fling) return;
 
-  void _onFlingStatus(AnimationStatus animStatus) {
-    if (animStatus == AnimationStatus.completed ||
-        animStatus == AnimationStatus.dismissed) {
-      _finishScroll();
+    final cur = animController.value;
+    final delta = cur - _lastFlingValue;
+    _lastFlingValue = cur;
+
+    final hitBoundary = _applyScrollDelta(delta);
+    callback.invalidate();
+
+    if (hitBoundary) {
+      _stopFlingImmediate();
     }
   }
 
-  void _abortAnim() {
+  void _onFlingStatusChanged(AnimationStatus s) {
+    // 自然结束（simulation 跑完）
+    if (s == AnimationStatus.completed || s == AnimationStatus.dismissed) {
+      if (_status == _ScrollStatus.fling) {
+        _status = _ScrollStatus.idle;
+        callback.invalidate();
+      }
+    }
+  }
+
+  /// 立即中止 fling 动画并重置状态
+  void _stopFlingImmediate() {
     if (animController.isAnimating) {
       animController.stop();
     }
-    _finishScroll();
+    _status = _ScrollStatus.idle;
   }
 
-  void _finishScroll() {
-    _scrollStatus = _Status.none;
-    // 延迟 invalidate，避免在 paint 期间触发 setState
-    // (_fillDown/_fillUp 可能在 draw() 中调用 _abortAnim)
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      callback.invalidate();
-    });
-  }
+  // ==================== 绘制 ====================
 
-  // ========== 布局逻辑 ==========
-
-  /// 根据滚动方向进行布局
-  void _layout() {
-    final scrollY = _scrollY;
-    if (scrollY > 0) {
-      _fillUp(scrollY);
-    } else {
-      _fillDown(scrollY);
-    }
-  }
-
-  /// 向上滑动(scrollY <= 0)，内容上移，填充底部空白
-  void _fillDown(int scrollY) {
-    bool hasTurnPage = false;
-
-    for (final layout in _pageLayouts) {
-      if (layout.type == null) continue;
-      layout.offset(scrollY);
-      // 页面完全滑出视口顶部
-      if (layout.bottom <= 0) {
-        layout.reset();
-        callback.turnPage(PageType.next);
-        _invalidatePictures();
-        hasTurnPage = true;
-      }
-    }
-
-    // 翻页后更新所有布局类型: NEXT→CURRENT, CURRENT→PREVIOUS
-    if (hasTurnPage) {
-      _turnPageLayout(PageType.next);
-    }
-
-    // 确保 current 页布局存在
-    if (_getPageLayout(PageType.current) == null &&
-        callback.hasPage(PageType.current)) {
-      final newLayout = _getScrapLayout();
-      if (newLayout != null) {
-        newLayout.type = PageType.current;
-      }
-    }
-
-    // 检测底部空白区域
-    final pageBottom = _getPageBottom();
-    final fillArea = pageBottom == null
-        ? viewHeight
-        : (viewHeight - pageBottom).clamp(0, viewHeight);
-
-    if (fillArea > 0) {
-      if (callback.hasPage(PageType.next)) {
-        // 在底部添加下一页
-        final layout = _getScrapLayout();
-        if (layout != null) {
-          layout.type = PageType.next;
-          layout.offset(viewHeight - fillArea);
-        }
-      } else {
-        // 没有下一页，重置为当前页并停止动画
-        if (_hasActiveLayout()) {
-          _clearLayouts();
-          final layout = _getScrapLayout();
-          if (layout != null) {
-            layout.type = PageType.current;
-          }
-        }
-        _abortAnim();
-      }
-    }
-  }
-
-  /// 向下滑动(scrollY > 0)，内容下移，填充顶部空白
-  void _fillUp(int scrollY) {
-    bool hasTurnPage = false;
-
-    for (final layout in _pageLayouts) {
-      if (layout.type == null) continue;
-      layout.offset(scrollY);
-      // 页面完全滑出视口底部
-      if (layout.top >= viewHeight) {
-        layout.reset();
-        if (callback.hasPage(PageType.previous)) {
-          callback.turnPage(PageType.previous);
-          _invalidatePictures();
-          hasTurnPage = true;
-        }
-      }
-    }
-
-    // 翻页后更新所有布局类型: PREVIOUS→CURRENT, CURRENT→NEXT
-    if (hasTurnPage) {
-      _turnPageLayout(PageType.previous);
-    }
-
-    // 确保 current 页布局存在
-    if (_getPageLayout(PageType.current) == null &&
-        callback.hasPage(PageType.current)) {
-      final pageTop = _getPageTop();
-      final newLayout = _getScrapLayout();
-      if (newLayout != null) {
-        newLayout.type = PageType.current;
-        if (pageTop != null) {
-          newLayout.offset(pageTop - viewHeight);
-        }
-      }
-    }
-
-    // 检测顶部空白区域
-    final pageTop = _getPageTop();
-    final fillArea =
-        pageTop == null ? viewHeight : pageTop.clamp(0, viewHeight);
-
-    if (fillArea > 0) {
-      if (callback.hasPage(PageType.previous)) {
-        // 在顶部添加上一页
-        final layout = _getScrapLayout();
-        if (layout != null) {
-          layout.type = PageType.previous;
-          layout.offset(fillArea - viewHeight);
-          // 上一页加入后立即翻页，使其成为 current
-          callback.turnPage(PageType.previous);
-          _invalidatePictures();
-          _turnPageLayout(PageType.previous);
-        }
-      } else {
-        // 没有上一页，重置为当前页并停止动画
-        if (_hasActiveLayout()) {
-          _clearLayouts();
-          final layout = _getScrapLayout();
-          if (layout != null) {
-            layout.type = PageType.current;
-          }
-        }
-        _abortAnim();
-      }
-    }
-  }
-
-  // ========== Layout 辅助方法 ==========
-
-  /// 翻页后更新布局类型
-  /// [type] == NEXT: 所有类型向前移一位 (NEXT→CURRENT, CURRENT→PREVIOUS)
-  /// [type] == PREVIOUS: 所有类型向后移一位 (PREVIOUS→CURRENT, CURRENT→NEXT)
-  void _turnPageLayout(PageType type) {
-    for (final layout in _pageLayouts) {
-      if (layout.type == null) continue;
-      if (type == PageType.previous) {
-        layout.type = layout.type!.getNext();
-      } else if (type == PageType.next) {
-        layout.type = layout.type!.getPrevious();
-      }
-    }
-  }
-
-  _PageLayout? _getPageLayout(PageType type) {
-    for (final layout in _pageLayouts) {
-      if (layout.type == type) return layout;
-    }
-    return null;
-  }
-
-  _PageLayout? _getScrapLayout() {
-    for (final layout in _pageLayouts) {
-      if (layout.type == null) return layout;
-    }
-    return null;
-  }
-
-  bool _hasActiveLayout() {
-    for (final layout in _pageLayouts) {
-      if (layout.type != null) return true;
-    }
-    return false;
-  }
-
-  void _clearLayouts() {
-    for (final layout in _pageLayouts) {
-      layout.reset();
-    }
-  }
-
-  int? _getPageTop() {
-    int? result;
-    for (final layout in _pageLayouts) {
-      if (layout.type == null) continue;
-      if (result == null || layout.top < result) {
-        result = layout.top;
-      }
-    }
-    return result;
-  }
-
-  int? _getPageBottom() {
-    int? result;
-    for (final layout in _pageLayouts) {
-      if (layout.type == null) continue;
-      if (result == null || layout.bottom > result) {
-        result = layout.bottom;
-      }
-    }
-    return result;
-  }
-
-  // ========== 绘制 ==========
-
-  /// 完全重写绘制入口，不使用基类的 Picture 缓存
+  /// 完全重写绘制入口，不使用基类的 Picture 缓存体系
   @override
   void draw(Canvas canvas, Size size, int version) {
-    if (_isRunning) {
-      _drawMove(canvas);
-    } else {
-      _drawStatic(canvas);
-    }
-  }
-
-  /// 动态绘制: 先布局再绘制
-  void _drawMove(Canvas canvas) {
-    _layout();
-    _drawPages(canvas);
-  }
-
-  /// 静态绘制: 确保有布局后绘制
-  void _drawStatic(Canvas canvas) {
-    if (!_hasActiveLayout()) {
-      _layout();
-    }
-    _drawPages(canvas);
-  }
-
-  /// 遍历所有活跃布局，在对应 Y 偏移处绘制页面
-  void _drawPages(Canvas canvas) {
     final w = viewWidth.toDouble();
     final h = viewHeight.toDouble();
 
     canvas.save();
     canvas.clipRect(Rect.fromLTWH(0, 0, w, h));
 
-    for (final layout in _pageLayouts) {
-      if (layout.type == null) continue;
-      // 只绘制 current 和 next (与 Kotlin 原版一致)
-      if (layout.type == PageType.current || layout.type == PageType.next) {
-        final pic = _ensurePicture(layout.type!);
-        if (pic != null) {
-          canvas.save();
-          canvas.translate(0, layout.top.toDouble());
-          canvas.drawPicture(pic);
-          canvas.restore();
-        }
+    // 绘制当前页
+    final curPic = _ensurePicture(PageType.current);
+    if (curPic != null) {
+      canvas.save();
+      canvas.translate(0, _pageOffset);
+      canvas.drawPicture(curPic);
+      canvas.restore();
+    }
+
+    // 空闲状态下绘制搜索高亮覆盖层
+    if (_status == _ScrollStatus.idle && _pageOffset == 0) {
+      callback.drawPageOverlay(canvas);
+    }
+
+    // 向上滚动（_pageOffset < 0）→ 在当前页下方绘制下一页
+    if (_pageOffset < 0) {
+      final nextPic = _ensurePicture(PageType.next);
+      if (nextPic != null) {
+        canvas.save();
+        canvas.translate(0, _pageOffset + h);
+        canvas.drawPicture(nextPic);
+        canvas.restore();
+      }
+    }
+
+    // 向下滚动（_pageOffset > 0）→ 在当前页上方绘制上一页
+    if (_pageOffset > 0) {
+      final prevPic = _ensurePicture(PageType.previous);
+      if (prevPic != null) {
+        canvas.save();
+        canvas.translate(0, _pageOffset - h);
+        canvas.drawPicture(prevPic);
+        canvas.restore();
       }
     }
 
     canvas.restore();
   }
 
+  /// 基类抽象方法（由 draw() 统一处理，此处不使用）
+  @override
+  void drawMove(Canvas canvas, Size size) {}
+
+  // ==================== Picture 缓存 ====================
+
   /// 按需录制 Picture，已有缓存则直接返回
   ui.Picture? _ensurePicture(PageType type) {
-    if (!_pictures.containsKey(type)) {
-      final recorder = ui.PictureRecorder();
-      final c = Canvas(recorder,
-          Rect.fromLTWH(0, 0, viewWidth.toDouble(), viewHeight.toDouble()));
-      callback.drawPage(c, type);
-      _pictures[type] = recorder.endRecording();
-    }
-    return _pictures[type];
+    final cached = _pictureCache[type];
+    if (cached != null) return cached;
+
+    // 非 current 类型需确认页面存在
+    if (type != PageType.current && !callback.hasPage(type)) return null;
+
+    final recorder = ui.PictureRecorder();
+    final c = Canvas(
+      recorder,
+      Rect.fromLTWH(0, 0, viewWidth.toDouble(), viewHeight.toDouble()),
+    );
+    callback.drawPage(c, type);
+    final pic = recorder.endRecording();
+    _pictureCache[type] = pic;
+    return pic;
   }
 
-  void _invalidatePictures() {
-    for (final pic in _pictures.values) {
-      pic.dispose();
+  void _disposePictures() {
+    for (final p in _pictureCache.values) {
+      p.dispose();
     }
-    _pictures.clear();
+    _pictureCache.clear();
   }
 
-  /// 外部调用 invalidateCache 时也清理滚动缓存
+  /// 翻到下一页后重映射：old next → current, old current → previous
+  void _shiftPicturesForward() {
+    final prev = _pictureCache.remove(PageType.previous);
+    final cur = _pictureCache.remove(PageType.current);
+    final next = _pictureCache.remove(PageType.next);
+
+    prev?.dispose();
+    if (cur != null) _pictureCache[PageType.previous] = cur;
+    if (next != null) _pictureCache[PageType.current] = next;
+    // 新的 next 将在 _ensurePicture 时按需录制
+  }
+
+  /// 翻到上一页后重映射：old previous → current, old current → next
+  void _shiftPicturesBackward() {
+    final prev = _pictureCache.remove(PageType.previous);
+    final cur = _pictureCache.remove(PageType.current);
+    final next = _pictureCache.remove(PageType.next);
+
+    next?.dispose();
+    if (prev != null) _pictureCache[PageType.current] = prev;
+    if (cur != null) _pictureCache[PageType.next] = cur;
+    // 新的 previous 将在 _ensurePicture 时按需录制
+  }
+
+  /// 外部调用时同步清理滚动缓存
   @override
   void invalidateCache() {
     super.invalidateCache();
-    _invalidatePictures();
-    _clearLayouts();
+    _disposePictures();
+    _pageOffset = 0;
   }
 
-  // ========== Tap 翻页 ==========
+  // ==================== Tap 翻页 ====================
 
   @override
   void startTapAnim(PageDirection dir) {
-    if (_scrollStatus == _Status.fling) {
-      _abortAnim();
+    if (_status == _ScrollStatus.fling) {
+      _stopFlingImmediate();
     }
-    if (_scrollStatus != _Status.none) return;
+    if (_status != _ScrollStatus.idle) return;
     if (dir == PageDirection.none) return;
 
     final type =
@@ -458,63 +333,24 @@ class ScrollPageAnimation extends PageAnimation {
     if (!callback.hasPage(type)) return;
 
     // 以固定速度触发 fling，模拟点击翻页
-    _touchY = viewHeight ~/ 2;
-    _lastY = _touchY;
     final velocity =
         dir == PageDirection.next ? -viewHeight * 3.0 : viewHeight * 3.0;
     _startFling(velocity);
   }
 
-  /// 基类抽象方法(不使用，由 draw() 直接分发)
-  @override
-  void drawMove(Canvas canvas, Size size) {}
-
-  // ========== 生命周期 ==========
+  // ==================== 生命周期 ====================
 
   @override
   void dispose() {
-    _invalidatePictures();
+    _disposePictures();
     super.dispose();
   }
 }
 
-// ========== 内部类 ==========
-
 /// 滚动状态
-enum _Status {
-  none, // 空闲
-  press, // 手动按下
-  move, // 手动滑动
-  fling, // 惯性滑动
-}
-
-/// 页面布局 - 追踪页面在视口中的垂直位置
-/// 对应 Kotlin PageLayout 内部类
-class _PageLayout {
-  /// Page Top 距离 ViewPort Top 的位置
-  int top = 0;
-
-  /// Page Bottom 距离 ViewPort Top 的位置
-  int bottom = 0;
-
-  int _height = 0;
-
-  /// 当前布局针对的页面类型(null 表示空闲/可回收)
-  PageType? type;
-
-  void setHeight(int height) {
-    _height = height;
-    reset();
-  }
-
-  void offset(int y) {
-    top += y;
-    bottom += y;
-  }
-
-  void reset() {
-    top = 0;
-    bottom = _height;
-    type = null;
-  }
+enum _ScrollStatus {
+  idle, // 空闲
+  press, // 按下
+  drag, // 拖拽中
+  fling, // 惯性滑动中
 }

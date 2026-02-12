@@ -30,6 +30,9 @@ abstract class PageAnimCallback {
   /// 绘制指定类型的页面到 Canvas
   void drawPage(Canvas canvas, PageType type);
 
+  /// 绘制页面覆盖层（搜索高亮等）——仅在空闲状态由动画系统调用
+  void drawPageOverlay(Canvas canvas);
+
   /// 请求重绘
   void invalidate();
 }
@@ -295,6 +298,8 @@ abstract class PageAnimation {
     if (pic != null) {
       canvas.drawPicture(pic);
     }
+    // 绘制搜索高亮等覆盖层（独立于 Picture 缓存，实时绘制）
+    callback.drawPageOverlay(canvas);
   }
 
   /// 动态绘制(拖拽/动画中) - 子类实现

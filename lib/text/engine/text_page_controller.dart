@@ -50,7 +50,7 @@ class TextPageController {
       _curPage = _findPageByPosition(position);
     } else {
       _curPage = pageWrapper;
-      _handleChapterSwitch(pageWrapper);
+      _syncChapterPointers(pageWrapper);
     }
   }
 
@@ -70,16 +70,24 @@ class TextPageController {
       final pages = wrapper.pages;
       if (position.pageIndex < pages.length) {
         _curPage = _PageWrapper(wrapper, position.pageIndex, pages[position.pageIndex]);
-        _handleChapterSwitch(_curPage!);
+        _syncChapterPointers(_curPage!);
       }
     }
   }
 
-  void _handleChapterSwitch(_PageWrapper pageWrapper) {
+  /// 跳转到目标页面后，直接同步章节指针（prev/cur/next）。
+  /// 不调用 turnPage，避免 turnPage 内部的 _nextPageWrapper/_prevPageWrapper
+  /// 错误地将 _curPage 覆盖为下一页/上一页。
+  void _syncChapterPointers(_PageWrapper pageWrapper) {
+    if (pageWrapper.chapterWrapper == _curChapter) return;
     if (pageWrapper.chapterWrapper == _prevChapter) {
-      turnPage(PageType.previous);
+      _nextChapter = _curChapter;
+      _curChapter = _prevChapter;
+      _prevChapter = null;
     } else if (pageWrapper.chapterWrapper == _nextChapter) {
-      turnPage(PageType.next);
+      _prevChapter = _curChapter;
+      _curChapter = _nextChapter;
+      _nextChapter = null;
     }
   }
 

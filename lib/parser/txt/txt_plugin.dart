@@ -90,6 +90,15 @@ class TxtPlugin implements FormatPlugin {
   }
 
   @override
+  String? getChapterPlainText(TextChapter chapter) {
+    // 从 tag 结构构建纯文本，保证与搜索引擎的偏移计算完全一致。
+    // （直接 substring 的原始文本包含多余的 \n，会导致偏移不匹配）
+    final content = getChapterContent(chapter);
+    if (content == null) return null;
+    return content.toPlainText();
+  }
+
+  @override
   ImageDataResolver? get imageDataResolver => null;
 
   @override

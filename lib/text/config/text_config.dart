@@ -15,6 +15,9 @@ class TextConfig {
   /// 背景颜色
   int bgColor;
 
+  /// 搜索高亮背景色（ARGB）
+  int searchHighlightColor;
+
   /// 壁纸路径
   String? wallpaperPath;
 
@@ -28,6 +31,7 @@ class TextConfig {
     this.marginRight = 24,
     this.textColor = 0xFF333333,
     this.bgColor = 0xFFF5F0E8,
+    this.searchHighlightColor = 0x55FF9800,
     this.wallpaperPath,
     TreeTextStyle? baseTextStyle,
   }) : _baseTextStyle = baseTextStyle ?? TreeTextStyle();

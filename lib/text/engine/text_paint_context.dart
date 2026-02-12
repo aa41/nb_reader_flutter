@@ -136,25 +136,41 @@ class TextPaintContext {
     return _cachedDescent!;
   }
 
-  /// 获取图片尺寸（始终以阅读器宽度为准，等比缩放高度）
+  /// 图片固定区域高度比例（占页面高度的百分比）
+  static const double _imageFixedHeightRatio = 0.4;
+
+  /// 获取图片区域尺寸（固定高度，避免解码前后抖动）
+  /// 返回的是图片显示区域的总尺寸（包含边距），实际图片会在其中居中显示
   Size? getImageSize(TextImage image, Size textAreaSize) {
     final maxW = textAreaSize.width;
-    final maxH = textAreaSize.height * 0.6; // 最大占页面 60%
+    // 使用固定高度，避免图片解码前后高度变化导致的抖动
+    final fixedH = textAreaSize.height * _imageFixedHeightRatio;
+    return Size(maxW, fixedH);
+  }
 
-    double imgH;
-    if (image.decodedImage != null) {
-      final origW = image.decodedImage!.width.toDouble();
-      final origH = image.decodedImage!.height.toDouble();
-      // 按宽度等比缩放高度
-      imgH = origH * (maxW / origW);
-    } else {
-      // 未解码时使用默认比例
-      imgH = maxW * 0.6;
-    }
+  /// 获取图片在固定区域内的实际绘制尺寸和偏移量
+  /// 返回 (actualSize, offset)，offset 是图片在区域内的居中偏移
+  (Size, Offset)? getImageDrawInfo(TextImage image, Size areaSize) {
+    if (image.decodedImage == null) return null;
 
-    // 限制最大高度
-    if (imgH > maxH) imgH = maxH;
-    return Size(maxW, imgH.clamp(1.0, maxH));
+    final origW = image.decodedImage!.width.toDouble();
+    final origH = image.decodedImage!.height.toDouble();
+    final areaW = areaSize.width;
+    final areaH = areaSize.height;
+
+    // 计算保持比例的缩放尺寸（fit within area）
+    final scaleW = areaW / origW;
+    final scaleH = areaH / origH;
+    final scale = scaleW < scaleH ? scaleW : scaleH;
+
+    final drawW = origW * scale;
+    final drawH = origH * scale;
+
+    // 居中偏移
+    final offsetX = (areaW - drawW) / 2;
+    final offsetY = (areaH - drawH) / 2;
+
+    return (Size(drawW, drawH), Offset(offsetX, offsetY));
   }
 
   TextPainter _getMetricsPainter() {

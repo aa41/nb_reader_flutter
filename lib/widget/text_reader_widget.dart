@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 import '../text/config/text_config.dart';
@@ -19,17 +21,24 @@ import 'page_enum.dart';
 typedef OnPageChanged = void Function(
     PagePosition position, PageProgress progress);
 
-/// 菜单区域点击回调
-typedef OnMenuTap = void Function();
-
 /// 文本阅读器 Widget
 /// 集成 TextEngine + PageAnimation + GestureDetector
+///
+/// header/footer 信息绘制在 Canvas 的 margin 区域内，跟随翻页动画一起移动，
+/// 实现全屏翻页效果（对应原版 PageView 的 dispatchDraw 拦截绘制）。
 class TextReaderWidget extends StatefulWidget {
   final TextModel textModel;
   final TextConfig? textConfig;
   final PageAnimType animType;
   final OnPageChanged? onPageChanged;
-  final OnMenuTap? onMenuTap;
+
+  /// header/footer 信息（绘制在 margin 区域）
+  final String? headerText;
+  final String? footerLeftText;
+  final String? footerRightText;
+
+  /// 安全区顶部内边距（用于避开刘海/状态栏区域）
+  final double safePaddingTop;
 
   const TextReaderWidget({
     super.key,
@@ -37,7 +46,10 @@ class TextReaderWidget extends StatefulWidget {
     this.textConfig,
     this.animType = PageAnimType.slide,
     this.onPageChanged,
-    this.onMenuTap,
+    this.headerText,
+    this.footerLeftText,
+    this.footerRightText,
+    this.safePaddingTop = 0,
   });
 
   @override
@@ -57,10 +69,9 @@ class TextReaderWidgetState extends State<TextReaderWidget>
     super.initState();
     _engine = TextEngine(widget.textConfig ?? TextConfig());
     _createAnimation(widget.animType);
-    // 当图片异步解码完成后，重新分页并重绘（图片实际尺寸可能与占位符不同）
+    // 当图片异步解码完成后，重绘（固定图片区域高度，无需重新分页）
     TextCanvas.onImageDecoded = () {
       if (mounted) {
-        _engine.repaginate();
         _pageAnim?.invalidateCache();
         _invalidate();
       }
@@ -84,6 +95,13 @@ class TextReaderWidgetState extends State<TextReaderWidget>
     }
     if (oldWidget.animType != widget.animType) {
       _switchAnimation(widget.animType);
+    }
+    // header/footer 文本变化时重绘（它们绘制在 Canvas Picture 上）
+    if (oldWidget.headerText != widget.headerText ||
+        oldWidget.footerLeftText != widget.footerLeftText ||
+        oldWidget.footerRightText != widget.footerRightText) {
+      _pageAnim?.invalidateCache();
+      _invalidate();
     }
   }
 
@@ -161,11 +179,91 @@ class TextReaderWidgetState extends State<TextReaderWidget>
     final controller = _engine.pageController;
     if (controller == null || !controller.hasPage(type)) return;
     controller.turnPage(type);
+    // 翻页时自动清除搜索高亮，确保高亮仅在搜索结果页面展示
+    if (_engine.highlightKeyword != null) {
+      _engine.clearHighlightResult();
+    }
   }
 
   @override
   void drawPage(Canvas canvas, PageType type) {
     _engine.draw(canvas, type);
+    _drawPageInfo(canvas);
+  }
+
+  @override
+  void drawPageOverlay(Canvas canvas) {
+    _engine.drawHighlightOverlay(canvas);
+  }
+
+  /// 在 Canvas 的 margin 区域绘制 header/footer 信息
+  /// 对应原版 PageView 中 header/footer View 作为子 View 一起绘制的效果
+  void _drawPageInfo(Canvas canvas) {
+    final config = _engine.getTextConfig();
+    final color = Color(config.textColor).withValues(alpha: 0.4);
+    final marginL = config.getMarginLeft().toDouble();
+    final marginR = config.getMarginRight().toDouble();
+    final marginT = config.getMarginTop().toDouble();
+    final marginB = config.getMarginBottom().toDouble();
+    final vw = _engine.viewWidth.toDouble();
+    final vh = _engine.viewHeight.toDouble();
+    final maxTextWidth = vw - marginL - marginR;
+
+    // --- Header: 章节标题 ---
+    if (widget.headerText != null && widget.headerText!.isNotEmpty) {
+      const headerFontSize = 12.0;
+      final tp = TextPainter(
+        text: TextSpan(
+          text: widget.headerText!,
+          style: TextStyle(fontSize: headerFontSize, color: color),
+        ),
+        textDirection: ui.TextDirection.ltr,
+        maxLines: 1,
+        ellipsis: '\u2026',
+      )..layout(maxWidth: maxTextWidth);
+
+      // 在顶部 margin 区域内垂直居中（考虑 safe area）
+      final headerY = widget.safePaddingTop +
+          (marginT - widget.safePaddingTop - tp.height) / 2;
+      tp.paint(canvas, Offset(marginL, headerY.clamp(2.0, marginT - tp.height)));
+      tp.dispose();
+    }
+
+    // --- Footer Left: 页码信息 ---
+    if (widget.footerLeftText != null && widget.footerLeftText!.isNotEmpty) {
+      const footerFontSize = 11.0;
+      final tp = TextPainter(
+        text: TextSpan(
+          text: widget.footerLeftText!,
+          style: TextStyle(fontSize: footerFontSize, color: color),
+        ),
+        textDirection: ui.TextDirection.ltr,
+        maxLines: 1,
+      )..layout(maxWidth: maxTextWidth / 2);
+
+      // 在底部 margin 区域内垂直居中
+      final footerY = vh - marginB + (marginB - tp.height) / 2;
+      tp.paint(canvas, Offset(marginL, footerY.clamp(vh - marginB, vh - tp.height)));
+      tp.dispose();
+    }
+
+    // --- Footer Right: 时间 ---
+    if (widget.footerRightText != null && widget.footerRightText!.isNotEmpty) {
+      const footerFontSize = 11.0;
+      final tp = TextPainter(
+        text: TextSpan(
+          text: widget.footerRightText!,
+          style: TextStyle(fontSize: footerFontSize, color: color),
+        ),
+        textDirection: ui.TextDirection.ltr,
+        maxLines: 1,
+      )..layout(maxWidth: maxTextWidth / 2);
+
+      final footerY = vh - marginB + (marginB - tp.height) / 2;
+      final footerX = vw - marginR - tp.width;
+      tp.paint(canvas, Offset(footerX, footerY.clamp(vh - marginB, vh - tp.height)));
+      tp.dispose();
+    }
   }
 
   @override
@@ -256,6 +354,19 @@ class TextReaderWidgetState extends State<TextReaderWidget>
     return _engine.pageController?.hasPage(PageType.previous) ?? false;
   }
 
+  /// 设置搜索高亮并跳转到精确文本位置
+  void setHighlight(String keyword, TextFixedPosition position) {
+    _engine.setHighlightResult(keyword, position);
+    skipToTextPosition(position);
+  }
+
+  /// 清除搜索高亮
+  void clearHighlight() {
+    _engine.clearHighlightResult();
+    _pageAnim?.invalidateCache();
+    _invalidate();
+  }
+
   /// 获取引擎实例（用于获取章节列表等信息）
   TextEngine get engine => _engine;
 
@@ -270,21 +381,6 @@ class TextReaderWidgetState extends State<TextReaderWidget>
   }
 
   // === 手势处理 ===
-
-  void _onTapUp(TapUpDetails details) {
-    if (_pageAnim != null && !_pageAnim!.isIdle) return;
-
-    final width = context.size?.width ?? 0;
-    final x = details.localPosition.dx;
-
-    if (x < width / 3) {
-      turnPageAnimated(PageType.previous);
-    } else if (x > width * 2 / 3) {
-      turnPageAnimated(PageType.next);
-    } else {
-      widget.onMenuTap?.call();
-    }
-  }
 
   void _onPanStart(DragStartDetails details) {
     _pageAnim?.onPanStart(details);
@@ -311,7 +407,6 @@ class TextReaderWidgetState extends State<TextReaderWidget>
         });
 
         return GestureDetector(
-          onTapUp: _onTapUp,
           onPanStart: _onPanStart,
           onPanUpdate: _onPanUpdate,
           onPanEnd: _onPanEnd,

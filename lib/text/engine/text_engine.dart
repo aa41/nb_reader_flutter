@@ -11,7 +11,9 @@ import '../element/text_word_element.dart';
 import '../entity/text_element_area.dart';
 import '../entity/text_line.dart';
 import '../entity/text_page.dart';
+import '../search/text_search_engine.dart';
 import '../style/text_alignment_type.dart';
+import '../tag/text_tag.dart';
 import 'base_text_engine.dart';
 import 'cursor/text_paragraph_cursor.dart';
 import 'cursor/text_word_cursor.dart';
@@ -26,6 +28,12 @@ import '../entity/text_position.dart';
 class TextEngine extends BaseTextEngine {
   TextModel? _textModel;
   TextPageController? _textPageController;
+
+  /// 搜索高亮关键词（null 表示无高亮）
+  String? _highlightKeyword;
+
+  /// 搜索高亮的精确位置（对应关键词起始位置）
+  TextFixedPosition? _highlightPosition;
 
   TextEngine(super.textConfig);
 
@@ -61,9 +69,15 @@ class TextEngine extends BaseTextEngine {
     // 因为字号/行距/边距变化会导致分页改变，页码不再准确。
     TextFixedPosition? savedTextPos;
     if (_textPageController != null) {
-      final curPage = _textPageController!.getCurrentPage();
-      if (curPage != null) {
-        savedTextPos = TextFixedPosition.fromPosition(curPage.startWordCursor);
+      // 搜索高亮期间优先使用高亮位置，避免 safeTop 等配置变化触发的
+      // 重新分页将位置回退到页面起始处（而非搜索结果位置）。
+      if (_highlightPosition != null) {
+        savedTextPos = _highlightPosition;
+      } else {
+        final curPage = _textPageController!.getCurrentPage();
+        if (curPage != null) {
+          savedTextPos = TextFixedPosition.fromPosition(curPage.startWordCursor);
+        }
       }
     }
 
@@ -492,17 +506,111 @@ class TextEngine extends BaseTextEngine {
     }
   }
 
+  /// 设置搜索高亮结果（关键词 + 精确位置）
+  void setHighlightResult(String keyword, TextFixedPosition position) {
+    _highlightKeyword = keyword;
+    _highlightPosition = position;
+  }
+
+  /// 清除搜索高亮
+  void clearHighlightResult() {
+    _highlightKeyword = null;
+    _highlightPosition = null;
+  }
+
+  /// 获取搜索高亮关键词
+  String? get highlightKeyword => _highlightKeyword;
+
   /// 完整绘制入口
-  void drawPageFull(TextCanvas canvas, TextPage page) {
+  /// [drawHighlight] 仅当前页传 true，前后页传 false
+  void drawPageFull(TextCanvas canvas, TextPage page, {bool drawHighlight = false}) {
     preparePage(page);
     final labels = prepareTextArea(page);
+    // 仅在当前页绘制搜索高亮
+    if (drawHighlight && _highlightKeyword != null && _highlightKeyword!.isNotEmpty) {
+      _drawSearchHighlights(canvas, page, labels);
+    }
     drawPage(canvas, page, labels);
+  }
+
+  /// 绘制搜索高亮（仅高亮特定搜索结果，而非页面上所有关键词匹配）
+  /// 通过 _highlightPosition 找到匹配起始的 TextElementArea，
+  /// 然后向前遍历 keyword.length 个字符的区域进行高亮。
+  void _drawSearchHighlights(TextCanvas canvas, TextPage page, List<int> labels) {
+    final pos = _highlightPosition;
+    final keyword = _highlightKeyword;
+    if (pos == null || keyword == null || keyword.isEmpty) return;
+
+    final areas = page.textElementAreaVector.areas();
+
+    // 查找匹配起始的 TextElementArea
+    int startAreaIdx = -1;
+    for (int i = 0; i < areas.length; i++) {
+      final area = areas[i];
+      if (area.element is TextWordElement &&
+          area.paragraphIndex == pos.paragraphIndex &&
+          area.elementIndex == pos.elementIndex &&
+          area.charIndex <= pos.charIndex &&
+          pos.charIndex < area.charIndex + area.length) {
+        startAreaIdx = i;
+        break;
+      }
+    }
+
+    if (startAreaIdx == -1) return;
+
+    final highlightPaint = Paint()
+      ..color = Color(getTextConfig().searchHighlightColor)
+      ..style = PaintingStyle.fill;
+
+    // 从起始 area 向前遍历，高亮覆盖 keyword.length 个字符的区域
+    int charsRemaining = keyword.length;
+    int prevEndElementIndex = -1;
+
+    for (int i = startAreaIdx; i < areas.length && charsRemaining > 0; i++) {
+      final area = areas[i];
+      if (area.element is! TextWordElement) continue;
+      if (area.paragraphIndex != pos.paragraphIndex) break;
+
+      // 累计相邻 word area 之间的空白字符（hSpace）
+      if (prevEndElementIndex >= 0 &&
+          area.elementIndex > prevEndElementIndex) {
+        charsRemaining -= 1;
+        if (charsRemaining <= 0) break;
+      }
+
+      final int charsInArea;
+      if (i == startAreaIdx) {
+        // 首个 area：从匹配起始位置开始计数
+        charsInArea = (area.charIndex + area.length) - pos.charIndex;
+      } else {
+        charsInArea = area.length;
+      }
+
+      // 绘制高亮矩形
+      final left = area.startX.toDouble();
+      final right = (area.startY + 1).toDouble();
+      final top = area.endX.toDouble();
+      final bottom = area.endY.toDouble();
+      canvas.canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTRB(left - 1, top - 1, right + 1, bottom + 1),
+          const Radius.circular(2),
+        ),
+        highlightPaint,
+      );
+
+      charsRemaining -= charsInArea;
+      prevEndElementIndex = area.elementIndex + 1;
+    }
   }
 
   // === 对外绘制接口 ===
 
   /// 绘制指定类型的页面到 Canvas
   /// 对应 Kotlin BaseTextEngine.draw → TextEngine.drawInternal
+  /// 注意：搜索高亮不在此处绘制，而是通过 drawHighlightOverlay 独立绘制，
+  /// 避免高亮被烘焙进 Picture 缓存导致翻页时出现错误的高亮。
   void draw(ui.Canvas canvas, PageType pageType) {
     if (_textModel == null ||
         _textModel!.getChapterCount() == 0 ||
@@ -533,9 +641,131 @@ class TextEngine extends BaseTextEngine {
       getTextConfig().getMarginTop().toDouble(),
     );
 
-    // 绘制页面内容
+    // 绘制页面内容（不含搜索高亮）
     final textCanvas = TextCanvas(paintContext, canvas);
-    drawPageFull(textCanvas, page);
+    drawPageFull(textCanvas, page, drawHighlight: false);
+
+    canvas.restore();
+  }
+
+  /// 将 SearchPosition 解析为精确的 TextFixedPosition
+  ///
+  /// 两阶段策略：
+  ///   1. 遍历段落 tags 构建 ContentTag 偏移表，找到目标 ContentTag 及标签内偏移
+  ///   2. 遍历元素，通过 WordElement.data 引用识别 ContentTag 边界，
+  ///      找到目标 ContentTag 内包含该偏移的元素
+  TextFixedPosition resolveSearchPosition(SearchPosition searchPos) {
+    final fallback = TextFixedPosition(
+      chapterIndex: searchPos.chapterIndex,
+      paragraphIndex: searchPos.paragraphIndex,
+      elementIndex: 0,
+      charIndex: 0,
+    );
+
+    if (_textModel == null) return fallback;
+
+    final chapterCursor = _textModel!.getChapterCursor(searchPos.chapterIndex);
+    if (searchPos.paragraphIndex >= chapterCursor.getParagraphCount()) {
+      return fallback;
+    }
+
+    final paragraphCursor =
+        chapterCursor.getParagraphCursor(searchPos.paragraphIndex);
+    final tagIter =
+        chapterCursor.getParagraphContent(searchPos.paragraphIndex);
+
+    // ── 第一阶段：遍历 tags，构建 ContentTag 偏移表 ──
+    final contentTagOffsets = <int>[]; // 每个 ContentTag 在段落纯文本中的起始偏移
+    final contentTagLens = <int>[];    // 每个 ContentTag 的字符长度
+    int textOff = 0;
+
+    while (tagIter.hasNext()) {
+      final tag = tagIter.next();
+      if (tag is TextContentTag) {
+        contentTagOffsets.add(textOff);
+        contentTagLens.add(tag.content.length);
+        textOff += tag.content.length;
+      }
+    }
+
+    // 找到目标偏移所在的 ContentTag
+    int targetCTIndex = -1;
+    int offsetInTag = 0;
+    for (int i = 0; i < contentTagOffsets.length; i++) {
+      if (contentTagOffsets[i] + contentTagLens[i] >
+          searchPos.charOffsetInParagraph) {
+        targetCTIndex = i;
+        offsetInTag = searchPos.charOffsetInParagraph - contentTagOffsets[i];
+        break;
+      }
+    }
+
+    if (targetCTIndex < 0) return fallback;
+
+    // ── 第二阶段：遍历元素，通过 data 引用跟踪 ContentTag 边界 ──
+    // 同一 ContentTag 的所有 WordElement 共享相同的 data 引用
+    // （_processContentTag 中 contentCodes = content.codeUnits 只创建一次）
+    int currentCTIndex = -1;
+    Object? currentData;
+
+    for (int i = 0; i < paragraphCursor.getElementCount(); i++) {
+      final elem = paragraphCursor.getElement(i);
+
+      if (elem is TextWordElement) {
+        // 检测 ContentTag 边界：data 引用变化表示进入新的 ContentTag
+        if (currentData == null || !identical(elem.data, currentData)) {
+          currentCTIndex++;
+          currentData = elem.data;
+        }
+
+        if (currentCTIndex == targetCTIndex) {
+          if (offsetInTag >= elem.offset &&
+              offsetInTag < elem.offset + elem.length) {
+            return TextFixedPosition(
+              chapterIndex: searchPos.chapterIndex,
+              paragraphIndex: searchPos.paragraphIndex,
+              elementIndex: i,
+              charIndex: offsetInTag - elem.offset,
+            );
+          }
+          if (elem.offset > offsetInTag) {
+            // 偏移落在空白区域，对齐到最近的单词元素
+            return TextFixedPosition(
+              chapterIndex: searchPos.chapterIndex,
+              paragraphIndex: searchPos.paragraphIndex,
+              elementIndex: i,
+              charIndex: 0,
+            );
+          }
+        }
+
+        if (currentCTIndex > targetCTIndex) break;
+      }
+    }
+
+    return fallback;
+  }
+
+  /// 绘制搜索高亮覆盖层（仅绘制当前页的高亮）
+  /// 此方法由动画系统在空闲状态下调用，独立于 Picture 缓存，
+  /// 确保高亮仅出现在当前可见页面上。
+  void drawHighlightOverlay(ui.Canvas canvas) {
+    if (_highlightKeyword == null || _highlightKeyword!.isEmpty) return;
+    if (_textModel == null || _textPageController == null) return;
+
+    final page = _textPageController!.getCurrentPage();
+    if (page == null) return;
+
+    canvas.save();
+    canvas.translate(
+      getTextConfig().getMarginLeft().toDouble(),
+      getTextConfig().getMarginTop().toDouble(),
+    );
+
+    preparePage(page);
+    final labels = prepareTextArea(page);
+    final textCanvas = TextCanvas(paintContext, canvas);
+    _drawSearchHighlights(textCanvas, page, labels);
 
     canvas.restore();
   }

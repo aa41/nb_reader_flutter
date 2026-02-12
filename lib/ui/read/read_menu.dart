@@ -8,6 +8,7 @@ class ReadBottomMenu extends StatelessWidget {
   final VoidCallback onNightModeTap;
   final VoidCallback onSettingTap;
   final VoidCallback onBookmarkTap;
+  final VoidCallback? onSearchTap;
   final bool isNightMode;
 
   const ReadBottomMenu({
@@ -16,6 +17,7 @@ class ReadBottomMenu extends StatelessWidget {
     required this.onNightModeTap,
     required this.onSettingTap,
     required this.onBookmarkTap,
+    this.onSearchTap,
     this.isNightMode = false,
   });
 
@@ -38,6 +40,11 @@ class ReadBottomMenu extends StatelessWidget {
                     icon: Icons.list,
                     label: '目录',
                     onTap: onCatalogTap,
+                  ),
+                  _MenuButton(
+                    icon: Icons.search,
+                    label: '搜索',
+                    onTap: onSearchTap ?? () {},
                   ),
                   _MenuButton(
                     icon: Icons.bookmark_border,

@@ -70,47 +70,58 @@ class TextCanvas {
     painter.dispose();
   }
 
-  /// 绘制图片
+  /// 绘制图片（在固定高度区域内居中显示，保持比例）
   void drawImage(int x, int y, TextImage image, Size textAreaSize) {
-    final size = paintContext.getImageSize(image, textAreaSize);
-    if (size == null) return;
+    // 获取固定区域尺寸（高度恒定，避免解码前后拖动）
+    final areaSize = paintContext.getImageSize(image, textAreaSize);
+    if (areaSize == null) return;
+
+    // 固定区域的左上角
+    final areaLeft = x.toDouble();
+    final areaTop = y.toDouble() - areaSize.height;
 
     // 尝试从缓存获取解码后的图片
     final decoded = _ImageDecodeCache.instance.get(image.id, image.data);
     if (decoded != null) {
-      // 缓存解码结果到 TextImage，方便后续 getImageSize 使用实际尺寸
       image.decodedImage ??= decoded;
-      // 绘制实际图片
-      final dst = Rect.fromLTWH(
-        x.toDouble(),
-        y.toDouble() - size.height,
-        size.width,
-        size.height,
-      );
-      final src = Rect.fromLTWH(
-        0, 0,
-        decoded.width.toDouble(),
-        decoded.height.toDouble(),
-      );
-      canvas.drawImageRect(decoded, src, dst, Paint());
+
+      // 计算在固定区域内的居中绘制位置和缩放尺寸
+      final drawInfo = paintContext.getImageDrawInfo(image, areaSize);
+      if (drawInfo != null) {
+        final (drawSize, drawOffset) = drawInfo;
+        final dst = Rect.fromLTWH(
+          areaLeft + drawOffset.dx,
+          areaTop + drawOffset.dy,
+          drawSize.width,
+          drawSize.height,
+        );
+        final src = Rect.fromLTWH(
+          0, 0,
+          decoded.width.toDouble(),
+          decoded.height.toDouble(),
+        );
+        canvas.drawImageRect(decoded, src, dst, Paint());
+      }
     } else {
-      // 图片正在解码或无数据，绘制占位框
-      final paint = Paint()
+      // 图片正在解码或无数据，在固定区域中央绘制占位框
+      final placeholderW = areaSize.width * 0.5;
+      final placeholderH = areaSize.height * 0.5;
+      final placeholderLeft = areaLeft + (areaSize.width - placeholderW) / 2;
+      final placeholderTop = areaTop + (areaSize.height - placeholderH) / 2;
+      final rect = Rect.fromLTWH(
+        placeholderLeft, placeholderTop, placeholderW, placeholderH,
+      );
+
+      final fillPaint = Paint()
         ..color = const Color(0xFFEEEEEE)
         ..style = PaintingStyle.fill;
-      final rect = Rect.fromLTWH(
-        x.toDouble(),
-        y.toDouble() - size.height,
-        size.width,
-        size.height,
-      );
-      canvas.drawRect(rect, paint);
-      // 绘制图片图标提示
-      final iconPaint = Paint()
+      canvas.drawRect(rect, fillPaint);
+
+      final borderPaint = Paint()
         ..color = const Color(0xFFCCCCCC)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1;
-      canvas.drawRect(rect, iconPaint);
+      canvas.drawRect(rect, borderPaint);
     }
   }
 }

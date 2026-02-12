@@ -601,11 +601,11 @@ class _TagBuildVisitor implements md.NodeVisitor {
         break;
     }
 
-    // 图片单独成段
-    tags.add(const TextParagraphTag(TextParagraphType.textParagraph));
-    tags.add(const TextControlTag(TextControlType.regular, true));
+    // 图片作为行内块级元素：不单独开新段落。
+    // 图片宽度 = textAreaWidth，会自然触发行断裂，效果等同于块级。
+    // 这样可保持父级 <p> 的段落结构完整（blockquote 上下文等），
+    // 避免产生空段落和孤立的 CLOSE 标签。
     tags.add(TextImageTag(src, imageData: imageData));
-    tags.add(const TextControlTag(TextControlType.regular, false));
 
     // 添加图片说明（caption）
     if (title != null && title.isNotEmpty) {

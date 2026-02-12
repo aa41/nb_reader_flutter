@@ -349,6 +349,12 @@ class TextEngine extends BaseTextEngine {
 
     while (curElementIndex < endElementIndex) {
       final element = paragraphCursor.getElement(curElementIndex)!;
+
+      // 图片作为块级元素：如果当前行已有内容，先在图片前断行
+      if (element is TextImageElement &&
+          curLineInfo.endElementIndex != startElementIndex) {
+        break;
+      }
       newWidth += getElementWidth(element, curCharIndex);
       newHeight = max(newHeight, getElementHeight(element));
       newDescent = max(newDescent, getElementDescent(element));
@@ -389,15 +395,19 @@ class TextEngine extends BaseTextEngine {
       ++curElementIndex;
       curCharIndex = 0;
       final previousElement = element;
-
       var allowBreak = curElementIndex >= endElementIndex;
       if (!allowBreak) {
         final nextElement = paragraphCursor.getElement(curElementIndex)!;
-        allowBreak = !identical(previousElement, TextElement.nbSpace) &&
-            !identical(nextElement, TextElement.nbSpace) &&
-            (nextElement is! TextWordElement || previousElement is TextWordElement) &&
-            nextElement is! TextImageElement &&
-            nextElement is! TextControlElement;
+        // 图片作为块级：图片前/后都允许断行
+        if (previousElement is TextImageElement ||
+            nextElement is TextImageElement) {
+          allowBreak = true;
+        } else {
+          allowBreak = !identical(previousElement, TextElement.nbSpace) &&
+              !identical(nextElement, TextElement.nbSpace) &&
+              (nextElement is! TextWordElement || previousElement is TextWordElement) &&
+              nextElement is! TextControlElement;
+        }
       }
 
       if (allowBreak) {
@@ -410,6 +420,11 @@ class TextEngine extends BaseTextEngine {
         curLineInfo.spaceCount = internalSpaceCount;
         curTextStyle = getTextStyle();
         removeLastSpace = !wordOccurred && internalSpaceCount > 0;
+      }
+
+      // 图片作为块级元素：单独成行后立即结束当前行
+      if (previousElement is TextImageElement) {
+        break;
       }
     }
 
@@ -481,8 +496,8 @@ class TextEngine extends BaseTextEngine {
 
   void _prepareTextAreaLine(TextPage page, TextLine line, int x, int y) {
     var realX = x;
-    var realY = min(y + line.height,
-        getTextConfig().getMarginTop() + getTextAreaHeight() - 1);
+    // y 已在文本区域坐标系内（0-based），无需加 marginTop
+    var realY = min(y + line.height, getTextAreaHeight() - 1);
 
     final paragraphCursor = line.paragraphCursor;
     setTextStyle(line.startStyle);
@@ -532,10 +547,10 @@ class TextEngine extends BaseTextEngine {
           isWordOccurred = false;
           --spaceCount;
         }
-      } else if (element is TextWordElement || element is TextImageElement) {
+      } else if (element is TextWordElement) {
         final height = getElementHeight(element);
         final descent = getElementDescent(element);
-        final length = element is TextWordElement ? element.length : 0;
+        final length = element.length;
 
         page.textElementAreaVector.add(TextElementArea(
           chapterIndex: chapterIdx,
@@ -552,6 +567,27 @@ class TextEngine extends BaseTextEngine {
           startY: realX + width - 1,
           endX: realY - height + 1,
           endY: realY + descent,
+        ));
+        isStyleChange = false;
+        isWordOccurred = true;
+      } else if (element is TextImageElement) {
+        // 图片作为块级元素：使用行顶部/底部坐标，忽略缩进
+        final height = getElementHeight(element);
+        page.textElementAreaVector.add(TextElementArea(
+          chapterIndex: chapterIdx,
+          paragraphIndex: paragraphIdx,
+          elementIndex: wordIndex,
+          charIndex: charIndex,
+          length: 0,
+          isLastElement: true,
+          addHyphenationSign: false,
+          isStyleChange: isStyleChange,
+          style: getTextStyle(),
+          element: element,
+          startX: 0,                    // 左边缘
+          startY: width - 1,            // 右边缘
+          endX: y,                       // 上边缘
+          endY: y + height,             // 下边缘
         ));
         isStyleChange = false;
         isWordOccurred = true;

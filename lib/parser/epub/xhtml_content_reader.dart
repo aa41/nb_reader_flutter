@@ -365,12 +365,11 @@ class _FragmentState {
   final String? startId;
   final String? endId;
   bool started;
-  bool ended;
+  bool ended = false;
 
   _FragmentState({
     this.startId,
     this.endId,
     this.started = false,
-    this.ended = false,
   });
 }

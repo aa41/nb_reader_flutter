@@ -515,6 +515,7 @@ class SimulationPageAnimation extends PageAnimation {
 
   // ========== 3. 绘制翻起页前方阴影 ==========
 
+  // ignore: unused_element
   void _drawCurrentPageShadow(Canvas canvas) {
     final double degree;
     if (_isRTandLB) {

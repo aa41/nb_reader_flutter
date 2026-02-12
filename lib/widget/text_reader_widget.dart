@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../text/annotation/text_annotation.dart';
 import '../text/config/text_config.dart';
 import '../text/element/text_code_block_element.dart';
 import '../text/element/text_image_element.dart';
@@ -33,6 +35,22 @@ typedef OnImageTap = void Function(TextImageElement image);
 /// 链接点击回调
 typedef OnLinkTap = void Function(String url);
 
+/// 外部自定义“写想法/想法编辑”BottomSheet 展示回调。
+///
+/// - [note]：当前被编辑/创建的想法标注（kind=note；创建时 noteText 通常为空）
+/// - [selectedText]：对应范围提取的文本（用于外部 UI 展示）
+/// - [isEdit]：true=编辑已有想法，false=写想法（新建）
+/// - [onCancel]：用户取消
+/// - [onConfirm]：用户确认保存（传入想法内容）
+typedef OnShowNoteBottomSheet = void Function(
+  BuildContext context,
+  TextAnnotation note,
+  String selectedText,
+  bool isEdit,
+  VoidCallback onCancel,
+  ValueChanged<String> onConfirm,
+);
+
 /// 文本阅读器 Widget
 /// 集成 TextEngine + PageAnimation + GestureDetector
 ///
@@ -58,6 +76,13 @@ class TextReaderWidget extends StatefulWidget {
   final String? footerLeftText;
   final String? footerRightText;
 
+  /// 外部自定义“想法”BottomSheet（写想法/编辑想法）。
+  /// 如果不设置，则使用默认输入框 BottomSheet。
+  final OnShowNoteBottomSheet? onShowNoteBottomSheet;
+
+  /// 是否处于文本选择态（选择态下禁用翻页拖拽手势）
+  final bool selectionMode;
+
   /// 安全区顶部内边距（用于避开刘海/状态栏区域）
   final double safePaddingTop;
 
@@ -73,6 +98,8 @@ class TextReaderWidget extends StatefulWidget {
     this.headerText,
     this.footerLeftText,
     this.footerRightText,
+    this.onShowNoteBottomSheet,
+    this.selectionMode = false,
     this.safePaddingTop = 0,
   });
 
@@ -391,6 +418,30 @@ class TextReaderWidgetState extends State<TextReaderWidget>
     _invalidate();
   }
 
+  /// 设置持久标注（会进入页面 Picture 缓存）
+  void setAnnotations(List<TextAnnotation> annotations) {
+    _engine.setAnnotations(annotations);
+    _pageAnim?.invalidateCache();
+    _invalidate();
+  }
+
+  /// 设置当前选择态范围（仅 overlay 绘制，不进入 Picture 缓存）
+  void setSelectionRange(TextFixedPosition? start, TextFixedPosition? end) {
+    _engine.setSelectionRange(start, end);
+    _invalidate();
+  }
+
+  void clearSelectionRange() {
+    _engine.clearSelectionRange();
+    _invalidate();
+  }
+
+  /// 主动使页面 Picture 缓存失效并重绘（用于标注更新等）
+  void invalidatePageCache() {
+    _pageAnim?.invalidateCache();
+    _invalidate();
+  }
+
   /// 查找给定屏幕坐标处的链接 URL
   String? findLinkAtPosition(double localX, double localY) {
     return _engine.findLinkAtPosition(localX, localY);
@@ -417,6 +468,51 @@ class TextReaderWidgetState extends State<TextReaderWidget>
     _engine.setTextConfig(config);
     _pageAnim?.invalidateCache();
     _invalidate();
+  }
+
+  /// 展示“写想法/编辑想法”BottomSheet，并返回用户输入的内容。
+  /// 返回 null 表示取消。
+  Future<String?> showNoteBottomSheet({
+    required TextAnnotation note,
+    required String selectedText,
+    required bool isEdit,
+  }) {
+    if (!mounted) return Future.value(null);
+
+    final cb = widget.onShowNoteBottomSheet;
+    if (cb != null) {
+      final completer = Completer<String?>();
+
+      void complete(String? value) {
+        if (completer.isCompleted) return;
+        completer.complete(value);
+      }
+
+      cb(
+        context,
+        note,
+        selectedText,
+        isEdit,
+        () => complete(null),
+        (text) => complete(text),
+      );
+
+      return completer.future;
+    }
+
+    final title = isEdit ? '编辑想法' : '写想法';
+
+    return showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return _DefaultNoteEditSheet(
+          title: title,
+          initialText: note.noteText ?? '',
+        );
+      },
+    );
   }
 
   // === 手势处理 ===
@@ -446,9 +542,9 @@ class TextReaderWidgetState extends State<TextReaderWidget>
         });
 
         return GestureDetector(
-          onPanStart: _onPanStart,
-          onPanUpdate: _onPanUpdate,
-          onPanEnd: _onPanEnd,
+          onPanStart: widget.selectionMode ? null : _onPanStart,
+          onPanUpdate: widget.selectionMode ? null : _onPanUpdate,
+          onPanEnd: widget.selectionMode ? null : _onPanEnd,
           behavior: HitTestBehavior.opaque,
           child: _isInitialized && _pageAnim != null
               ? CustomPaint(
@@ -464,6 +560,95 @@ class TextReaderWidgetState extends State<TextReaderWidget>
                 ),
         );
       },
+    );
+  }
+}
+
+class _DefaultNoteEditSheet extends StatefulWidget {
+  final String title;
+  final String initialText;
+
+  const _DefaultNoteEditSheet({
+    required this.title,
+    required this.initialText,
+  });
+
+  @override
+  State<_DefaultNoteEditSheet> createState() => _DefaultNoteEditSheetState();
+}
+
+class _DefaultNoteEditSheetState extends State<_DefaultNoteEditSheet> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialText);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final viewInsets = MediaQuery.of(context).viewInsets;
+    final maxH = MediaQuery.of(context).size.height * 0.75;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: viewInsets.bottom),
+      child: SafeArea(
+        top: false,
+        child: Container(
+          constraints: BoxConstraints(maxHeight: maxH),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    widget.title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('取消'),
+                  ),
+                  const SizedBox(width: 6),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(_controller.text),
+                    child: const Text('保存'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Flexible(
+                child: TextField(
+                  controller: _controller,
+                  autofocus: true,
+                  maxLines: null,
+                  minLines: 6,
+                  decoration: const InputDecoration(
+                    hintText: '写下你的想法…',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

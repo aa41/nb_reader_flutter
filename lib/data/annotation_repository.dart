@@ -67,4 +67,60 @@ class AnnotationRepository {
     final prefs = await _getPrefs();
     await prefs.remove(_key(bookId));
   }
+
+  // === JSON 导入导出 ===
+
+  /// 将指定书籍的标注导出为 JSON 字符串
+  String exportToJson(String bookId, List<TextAnnotation> annotations) {
+    final data = {
+      'bookId': bookId,
+      'version': 1,
+      'exportedAt': DateTime.now().millisecondsSinceEpoch,
+      'annotations': annotations.map((a) => a.toJson()).toList(),
+    };
+    return jsonEncode(data);
+  }
+
+  /// 从 JSON 字符串导入标注，返回导入的标注列表
+  /// [merge] 为 true 时与已有标注合并（按 id 去重），否则替换
+  Future<List<TextAnnotation>> importFromJson(
+    String bookId,
+    String jsonStr, {
+    bool merge = true,
+  }) async {
+    final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+    final list = (data['annotations'] as List<dynamic>)
+        .map((e) => TextAnnotation.fromJson(e as Map<String, dynamic>))
+        .toList();
+
+    if (!merge) {
+      await saveAnnotations(bookId, list);
+      return list;
+    }
+
+    final existing = await loadAnnotations(bookId);
+    final idSet = <String>{};
+    final merged = <TextAnnotation>[];
+
+    // 导入的优先（更新时间更新的覆盖）
+    for (final a in list) {
+      idSet.add(a.id);
+      final old = existing.where((e) => e.id == a.id).firstOrNull;
+      if (old != null && old.updatedAt > a.updatedAt) {
+        merged.add(old);
+      } else {
+        merged.add(a);
+      }
+    }
+
+    // 保留未在导入列表中的已有标注
+    for (final a in existing) {
+      if (!idSet.contains(a.id)) {
+        merged.add(a);
+      }
+    }
+
+    await saveAnnotations(bookId, merged);
+    return merged;
+  }
 }

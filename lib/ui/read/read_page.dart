@@ -33,15 +33,19 @@ import 'search_page.dart';
 class ReadPage extends StatefulWidget {
   final BookEntity book;
 
-  /// 外部自定义“想法”展示/编辑回调：
+  /// 外部自定义"想法"展示/编辑回调：
   /// - 如果返回非空字符串，则视为用户保存了新的想法内容（用于创建/更新）
   /// - 返回 null 视为取消/不修改
   final Future<String?> Function(BuildContext context, TextAnnotation note)? onShowNote;
+
+  /// 自定义工具选项（显示在"写想法"后面）
+  final List<AnnotationToolOption> extraToolOptions;
 
   const ReadPage({
     super.key,
     required this.book,
     this.onShowNote,
+    this.extraToolOptions = const [],
   });
 
   @override
@@ -941,9 +945,9 @@ class _ReadPageState extends State<ReadPage> {
     final size = MediaQuery.of(context).size;
     final anchor = _getSelectionAnchor(size);
 
-    const toolbarH = 62.0;
-    const toolbarW = 320.0;
-    const panelH = 62.0;
+    const toolbarH = 46.0;
+    final toolbarW = size.width * 2 / 3;
+    const panelH = 46.0;
 
     final toolbarPos = _computeFloatingTopLeft(
       size: size,
@@ -1028,6 +1032,7 @@ class _ReadPageState extends State<ReadPage> {
               onNote: () => unawaited(_createNoteForSelection()),
               onDismiss: _clearSelection,
               onDelete: canDeleteHighlight ? _deleteActiveHighlight : null,
+              extraOptions: widget.extraToolOptions,
             ),
           ),
         ),
@@ -1429,7 +1434,8 @@ class _ReadPageState extends State<ReadPage> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           setState(() => _textConfig = _buildTextConfig());
-          _readerKey.currentState?.updateTextConfig(_textConfig);
+          // 不需要显式调用 updateTextConfig —— setState 触发 rebuild 后
+          // didUpdateWidget 会检测到 textConfig 变化并自动调用 setTextConfig
         }
       });
     }
@@ -1439,6 +1445,8 @@ class _ReadPageState extends State<ReadPage> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: bgColor,
+      // 阅读器不应随键盘弹出而缩小，避免触发重新分页导致位置丢失
+      resizeToAvoidBottomInset: false,
       drawer: CatalogDrawer(
         bookTitle: widget.book.title,
         chapters: _chapters,
